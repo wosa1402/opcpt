@@ -41,6 +41,53 @@ install -d -m 0700 \
     /root/Startup
 
 cp -an /usr/local/share/openclaw/plasma-default/. /root/.config/
+install -d -m 0700 /root/.config/fcitx5
+cp -an /usr/local/share/openclaw/fcitx5-default/. /root/.config/fcitx5/
+
+# Plasma 6 defaults to an adaptive floating panel. Keep the Windows-like
+# attached taskbar unless the user has explicitly chosen another value.
+kreadconfig_bin="$(command -v kreadconfig6 || command -v kreadconfig5 || true)"
+kwriteconfig_bin="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+if [[ -n "${kreadconfig_bin}" && -n "${kwriteconfig_bin}" ]]; then
+    panel_ids=(2)
+    plasma_layout=/root/.config/plasma-org.kde.plasma.desktop-appletsrc
+    if [[ -f "${plasma_layout}" ]]; then
+        while IFS= read -r panel_id; do
+            [[ -n "${panel_id}" ]] && panel_ids+=("${panel_id}")
+        done < <(
+            awk '
+                /^\[Containments\]\[[0-9]+\]$/ {
+                    panel_id=$0
+                    sub(/^\[Containments\]\[/, "", panel_id)
+                    sub(/\]$/, "", panel_id)
+                    next
+                }
+                panel_id != "" && $0 == "plugin=org.kde.panel" {
+                    print panel_id
+                    panel_id=""
+                }
+            ' "${plasma_layout}"
+        )
+    fi
+
+    while IFS= read -r panel_id; do
+        [[ -n "${panel_id}" ]] || continue
+        floating="$(${kreadconfig_bin} \
+            --file plasmashellrc \
+            --group PlasmaViews \
+            --group "Panel ${panel_id}" \
+            --key floating \
+            --default __unset__)"
+        if [[ "${floating}" == __unset__ ]]; then
+            "${kwriteconfig_bin}" \
+                --file plasmashellrc \
+                --group PlasmaViews \
+                --group "Panel ${panel_id}" \
+                --key floating 0
+        fi
+    done < <(printf '%s\n' "${panel_ids[@]}" | sort -u)
+fi
+
 # These shortcuts are image-managed. Overwrite only the known names so an
 # upgrade from the former XFCE image cannot leave launchers pointing at
 # removed XFCE applications; unrelated user files remain untouched.

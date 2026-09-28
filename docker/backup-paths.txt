@@ -13,6 +13,7 @@
 .config/kwinrc
 .config/plasma-org.kde.plasma.desktop-appletsrc
 .config/plasmarc
+.config/plasmashellrc
 .config/startkderc
 .local/share
 Desktop

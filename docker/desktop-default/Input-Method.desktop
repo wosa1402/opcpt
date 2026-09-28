@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=中文输入法设置
+Comment=配置 Fcitx 5 拼音、快捷键和输入法顺序
+Exec=fcitx5-configtool
+Icon=fcitx
+Terminal=false

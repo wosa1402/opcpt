@@ -20,6 +20,8 @@ short_description: 优先保住 noVNC、支持 DeepSeek 中转和版本化恢复
 - `/root` 是高速运行目录；SQLite、Chrome LevelDB 和桌面程序不会直接运行在 ModelScope 的 s3fs 上。
 - `/mnt/workspace/openclaw-data/snapshots` 只保存带 SHA-256 校验的版本化快照。
 - noVNC 默认使用 Remote Resizing，让远程分辨率跟随浏览器可用区域；不支持动态调整的客户端仍可在 noVNC 设置中改用 Local Scaling。
+- KDE 底部任务栏默认固定贴边，不会再随窗口位置在悬浮和贴边样式之间切换。
+- 内置 Fcitx 5 拼音，默认保持英文，按 `Ctrl+Space` 在英文和拼音之间切换。
 - noVNC、Xvnc、Supervisor 和内存守护程序属于救援链；Chrome、OpenClaw 和其他程序在内存不足时优先被回收。
 - Docker 健康检查只检查 VNC/noVNC，不依赖 OpenClaw。Agent 崩溃不会让平台把可用桌面误判为失效。
 - noVNC/Xvnc 先启动，数据恢复、桌面、OpenClaw 和 Chrome 随后启动。
@@ -109,6 +111,12 @@ Chrome 在容器启动时会启动一次，供 OpenClaw 通过本机 CDP 使用�
 ```bash
 supervisorctl start chrome
 ```
+
+## 中文输入法
+
+镜像内置 Fcitx 5 和拼音词库。桌面启动后默认是英文键盘，按 `Ctrl+Space` 即可切换为拼音，再按一次返回英文。桌面上的“中文输入法设置”可以调整输入法顺序、候选词和快捷键。
+
+输入法配置位于 `/root/.config/fcitx5`，会进入版本化快照并在容器重建后恢复。如果某个已经打开的程序没有识别输入法，关闭该程序后重新打开即可，不需要重启整个容器。
 
 ## ModelScope
 

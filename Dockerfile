@@ -37,6 +37,7 @@ RUN apt-get update \
         dolphin \
         fcitx5 \
         fcitx5-chinese-addons \
+        fcitx5-config-qt \
         fcitx5-frontend-gtk3 \
         fcitx5-frontend-qt5 \
         fcitx5-frontend-qt6 \
@@ -107,6 +108,7 @@ RUN npm install --global "openclaw@${OPENCLAW_VERSION}" \
 COPY docker/openclaw-template.json /usr/local/share/openclaw/openclaw-template.json
 COPY docker/backup-paths.txt /usr/local/share/openclaw/backup-paths.txt
 COPY docker/backup-excludes.txt /usr/local/share/openclaw/backup-excludes.txt
+COPY docker/fcitx5-default/ /usr/local/share/openclaw/fcitx5-default/
 COPY docker/plasma-default/ /usr/local/share/openclaw/plasma-default/
 COPY docker/desktop-default/ /usr/local/share/openclaw/desktop-default/
 COPY docker/novnc-index.html /usr/local/share/openclaw/novnc-index.html
@@ -129,6 +131,9 @@ RUN HOME=/root \
     && command -v startplasma-x11 > /dev/null \
     && command -v kwin_x11 > /dev/null \
     && command -v plasmashell > /dev/null \
+    && command -v fcitx5-config-qt > /dev/null \
+    && command -v kreadconfig6 > /dev/null \
+    && command -v kwriteconfig6 > /dev/null \
     && grep -Fq "UI.initSetting('resize', 'off');" /usr/share/novnc/app/ui.js \
     && sed -i "s/UI.initSetting('resize', 'off');/UI.initSetting('resize', 'remote');/" /usr/share/novnc/app/ui.js \
     && rm -f /usr/share/novnc/index.html \

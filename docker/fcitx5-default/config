@@ -1,0 +1,7 @@
+[Hotkey]
+TriggerKeys=Control+space
+EnumerateGroupForwardKeys=Super+space
+
+[Behavior]
+ActiveByDefault=False
+ShareInputState=No

@@ -108,6 +108,11 @@ jobs:
             sleep 2
           done
           [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
+          docker exec "${container}" pgrep -x fcitx5 > /dev/null
+          docker exec "${container}" test -x /usr/bin/fcitx5-config-qt
+          docker exec "${container}" grep -Fq 'Name=pinyin' /root/.config/fcitx5/profile
+          docker exec "${container}" grep -Fq 'TriggerKeys=Control+space' /root/.config/fcitx5/config
+          docker exec "${container}" grep -Fq 'floating=0' /root/.config/plasmashellrc
           docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
 
           docker exec -i "${container}" node --input-type=module <<'NODE'

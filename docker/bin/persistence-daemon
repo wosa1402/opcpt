@@ -35,12 +35,14 @@ for candidate in \
     /root/Services \
     /root/Startup \
     /root/.config/openclaw-chrome \
+    /root/.config/fcitx5 \
     /root/.config/kdeglobals \
     /root/.config/kwinrc \
     /root/.config/ksmserverrc \
     /root/.config/kscreenlockerrc \
     /root/.config/baloofilerc \
     /root/.config/plasma-org.kde.plasma.desktop-appletsrc \
+    /root/.config/plasmashellrc \
     /root/.local/share/plasma; do
     [[ -e "${candidate}" ]] && watch_paths+=("${candidate}")
 done
