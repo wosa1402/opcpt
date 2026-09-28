@@ -22,9 +22,14 @@ if ! /usr/local/bin/openclaw-restore-latest; then
     echo '[bootstrap] 恢复失败；保留救援桌面并以空白运行目录继续启动。' >&2
 fi
 
+install -d -m 0700 /root/.config
+if [[ ! -e /root/.config/openclaw-chrome && -d /root/.config/google-chrome ]]; then
+    mv -- /root/.config/google-chrome /root/.config/openclaw-chrome
+    echo '[bootstrap] 已把旧版 Chrome 用户资料迁移到受管专用目录。'
+fi
+
 install -d -m 0700 \
-    /root/.config \
-    /root/.config/google-chrome \
+    /root/.config/openclaw-chrome \
     /root/.openclaw \
     /root/.openclaw/workspace \
     /root/.local/share \
@@ -58,9 +63,9 @@ elif [[ ! -f "${config_path}" ]]; then
     fi
 fi
 
-rm -f -- /root/.config/google-chrome/SingletonCookie \
-    /root/.config/google-chrome/SingletonLock \
-    /root/.config/google-chrome/SingletonSocket
+rm -f -- /root/.config/openclaw-chrome/SingletonCookie \
+    /root/.config/openclaw-chrome/SingletonLock \
+    /root/.config/openclaw-chrome/SingletonSocket
 
 touch /run/openclaw/backup.dirty
 echo '[bootstrap] 运行目录已经准备完成。'

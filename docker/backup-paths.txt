@@ -1,6 +1,6 @@
 # Paths are relative to /root. Missing paths are ignored.
 .openclaw
-.config/google-chrome
+.config/openclaw-chrome
 .config/fcitx5
 .config/mimeapps.list
 .config/baloofilerc

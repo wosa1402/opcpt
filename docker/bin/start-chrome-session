@@ -7,7 +7,7 @@ cache_dir=/tmp/openclaw-chrome-cache
 mkdir -p "${cache_dir}"
 
 chrome_args=(
-    --user-data-dir="${XDG_CONFIG_HOME}/google-chrome"
+    --user-data-dir="${CHROME_USER_DATA_DIR:-/root/.config/openclaw-chrome}"
     --disk-cache-dir="${cache_dir}"
     --disk-cache-size="${CHROME_DISK_CACHE_BYTES:-268435456}"
     --media-cache-size="${CHROME_MEDIA_CACHE_BYTES:-67108864}"

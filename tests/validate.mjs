@@ -17,6 +17,7 @@ const templateText = await read("docker/openclaw-template.json");
 const template = JSON.parse(templateText);
 const supervisor = await read("docker/supervisord.conf");
 const entrypoint = await read("docker/bin/container-entrypoint");
+const bootstrap = await read("docker/bin/bootstrap-runtime");
 const healthcheck = await read("docker/bin/healthcheck");
 const backup = await read("docker/bin/openclaw-backup-now");
 const restore = await read("docker/bin/openclaw-restore-latest");
@@ -119,7 +120,9 @@ check(startKdeConfig.includes("systemdBoot=false"), "KDE must use its non-system
 check(openclawService.includes("set-oom-score 500"), "OpenClaw must be less protected than the desktop");
 check(chrome.includes("set-oom-score 700"), "Chrome must be reclaimed before OpenClaw");
 check((chrome.match(/--no-sandbox/g) ?? []).length === 1, "root Chrome must have one explicit no-sandbox flag");
+check(chrome.includes("/root/.config/openclaw-chrome"), "managed Chrome must use a non-default profile so current Chrome permits CDP");
 check(managedChrome.includes("supervisorctl start chrome"), "the desktop must provide a supported way to reopen managed Chrome");
+check(managedChrome.includes("/root/.config/openclaw-chrome"), "the desktop launcher must reuse the managed Chrome profile");
 check(chromeDesktop.includes("start-managed-chrome"), "the managed Chrome desktop shortcut must call the supervisor-aware launcher");
 
 check(novncIndex.includes('target.searchParams.set("resize", "remote")'), "the noVNC landing page must request remote resizing");
@@ -149,12 +152,14 @@ check(guardian.includes("largest_killable"), "emergency pressure must have a non
 check(guardian.includes("supervisord|Xtigervnc|websockify|memory-guardian|tini|dbus-daemon"), "rescue processes must be excluded from emergency selection");
 
 check(backupPaths.includes(".openclaw"), "OpenClaw state must be backed up");
-check(backupPaths.includes(".config/google-chrome"), "Chrome profile must be backed up");
+check(backupPaths.includes(".config/openclaw-chrome"), "the managed Chrome profile must be backed up");
 check(backupPaths.includes(".config/plasma-org.kde.plasma.desktop-appletsrc"), "the KDE desktop layout must be backed up");
 check(backupPaths.includes(".config/kdeglobals"), "KDE appearance settings must be backed up");
 check(backupPaths.includes("Projects"), "user projects must be backed up");
 check(backupPaths.includes("Startup"), "root startup automation must be backed up");
 check(persistence.includes("/root/.config/kwinrc"), "the persistence daemon must watch KDE settings");
+check(persistence.includes("/root/.config/openclaw-chrome"), "the persistence daemon must watch the managed Chrome profile");
+check(bootstrap.includes("mv -- /root/.config/google-chrome /root/.config/openclaw-chrome"), "existing Chrome profiles must migrate without being discarded");
 check(backupExcludes.includes("node_modules"), "rebuildable dependency trees must be excluded");
 check(backupExcludes.includes(".openclaw/cache"), "rebuildable OpenClaw cache data must be excluded");
 check(backupExcludes.includes("*-wal"), "live WAL files must not be copied directly");

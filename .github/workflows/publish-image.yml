@@ -110,7 +110,8 @@ jobs:
           [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
           docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
 
-          docker exec "${container}" /usr/local/bin/openclaw-backup-now
+          docker exec -e OPENCLAW_PERSIST_DIR=/data/openclaw-data \
+            "${container}" /usr/local/bin/openclaw-backup-now
           docker exec "${container}" grep -Eq '^ok snapshot-' /run/openclaw/backup.status
           docker exec "${container}" bash -Eeuo pipefail -c '
             snapshot_dir=/data/openclaw-data/snapshots

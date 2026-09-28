@@ -95,7 +95,7 @@ backup_sqlite_tree() {
 }
 
 backup_sqlite_tree /root/.openclaw
-backup_sqlite_tree /root/.config/google-chrome
+backup_sqlite_tree /root/.config/openclaw-chrome
 
 apt-mark showmanual 2>/dev/null | sort > "${stage}/metadata/apt-manual.txt" || true
 snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

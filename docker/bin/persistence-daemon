@@ -34,6 +34,7 @@ for candidate in \
     /root/Projects \
     /root/Services \
     /root/Startup \
+    /root/.config/openclaw-chrome \
     /root/.config/kdeglobals \
     /root/.config/kwinrc \
     /root/.config/ksmserverrc \
