@@ -35,10 +35,11 @@ install -d -m 0700 \
     /root/Services \
     /root/Startup
 
-if [[ ! -d /root/.config/xfce4 ]]; then
-    cp -a /usr/local/share/openclaw/xfce4-default /root/.config/xfce4
-fi
-cp -an /usr/local/share/openclaw/desktop-default/. /root/Desktop/
+cp -an /usr/local/share/openclaw/plasma-default/. /root/.config/
+# These shortcuts are image-managed. Overwrite only the known names so an
+# upgrade from the former XFCE image cannot leave launchers pointing at
+# removed XFCE applications; unrelated user files remain untouched.
+cp -a /usr/local/share/openclaw/desktop-default/. /root/Desktop/
 find /root/Desktop -maxdepth 1 -type f -name '*.desktop' -exec chmod 0755 {} +
 
 config_path=/root/.openclaw/openclaw.json

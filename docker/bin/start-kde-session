@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export DESKTOP_SESSION=plasma
+export XDG_SESSION_TYPE=x11
+export XDG_SESSION_DESKTOP=KDE
+export XDG_CURRENT_DESKTOP=KDE
+export KDE_FULL_SESSION=true
+export KDE_SESSION_VERSION=6
+export QT_QPA_PLATFORM=xcb
+
+xset s off || true
+xset -dpms || true
+xset s noblank || true
+
+fcitx5 -d --disable=wayland || true
+
+exec /usr/bin/startplasma-x11

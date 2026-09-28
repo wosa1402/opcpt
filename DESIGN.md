@@ -3,7 +3,9 @@
 ## 用户目标
 
 - 长期使用 root 桌面，方便安装和部署软件。
-- XFCE 调整为适合 Windows 用户的底部任务栏和开始菜单布局。
+- 使用 Debian 13 的 KDE Plasma 6 X11 会话，提供适合 Windows 用户的现代底部任务栏和开始菜单布局。
+- noVNC 默认请求 Remote Resizing，使桌面分辨率跟随浏览器窗口；不支持时可手动回退到 Local Scaling。
+- Chrome 容器启动时运行一次，正常关闭后保持关闭，异常退出时才自动恢复。
 - noVNC/Xvnc 是最高优先级救援通道；OpenClaw、Chrome 和用户程序不能成为桌面失联的单点。
 - DeepSeek 官方兼容接口，只替换中转 Base URL 和密钥。
 - 用户侧 `DEEPSEEK_*` 参数进入 OpenClaw 前会转换为通用内部变量，避免启动时联网自动安装官方 DeepSeek 插件。

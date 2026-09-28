@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+status="$(supervisorctl status chrome 2>/dev/null || true)"
+if [[ "${status}" == *' RUNNING '* || "${status}" == *' STARTING '* ]]; then
+    exec /usr/bin/google-chrome-stable \
+        --user-data-dir="${XDG_CONFIG_HOME:-/root/.config}/google-chrome" \
+        --no-sandbox \
+        --new-window about:blank
+fi
+
+supervisorctl start chrome

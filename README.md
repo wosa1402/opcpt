@@ -11,7 +11,7 @@ short_description: 优先保住 noVNC、支持 DeepSeek 中转和版本化恢复
 
 # OpenClaw Rescue Desktop
 
-这是面向 ModelScope Docker 创空间的 root Linux 云桌面，也可用于 Hugging Face Docker Space 和本地 Docker。它从干净的 Debian/Node 基础镜像构建，包含 Windows 风格的 XFCE、Chrome、OpenClaw、TigerVNC 和 noVNC，固定使用 OpenClaw `2026.9.6` 与 Node `24.16.0`。
+这是面向 ModelScope Docker 创空间的 root Linux 云桌面，也可用于 Hugging Face Docker Space 和本地 Docker。它从干净的 Debian 13/Node 基础镜像构建，包含 Windows 用户容易上手的 KDE Plasma 6、Chrome、OpenClaw、TigerVNC 和 noVNC，固定使用 OpenClaw `2026.9.6` 与 Node `24.16.0`。
 
 镜像不继承 `ghcr.io/tunmax/openclaw_computer`，但保留了它“本地运行、持久盘备份、重建时恢复”的合理思路，并重新实现了快照校验、历史版本、内存保护和服务监管。
 
@@ -19,6 +19,7 @@ short_description: 优先保住 noVNC、支持 DeepSeek 中转和版本化恢复
 
 - `/root` 是高速运行目录；SQLite、Chrome LevelDB 和桌面程序不会直接运行在 ModelScope 的 s3fs 上。
 - `/mnt/workspace/openclaw-data/snapshots` 只保存带 SHA-256 校验的版本化快照。
+- noVNC 默认使用 Remote Resizing，让远程分辨率跟随浏览器可用区域；不支持动态调整的客户端仍可在 noVNC 设置中改用 Local Scaling。
 - noVNC、Xvnc、Supervisor 和内存守护程序属于救援链；Chrome、OpenClaw 和其他程序在内存不足时优先被回收。
 - Docker 健康检查只检查 VNC/noVNC，不依赖 OpenClaw。Agent 崩溃不会让平台把可用桌面误判为失效。
 - noVNC/Xvnc 先启动，数据恢复、桌面、OpenClaw 和 Chrome 随后启动。
@@ -47,7 +48,7 @@ Supervisor / Xvnc / noVNC / memory-guardian
                     ↓
         校验并恢复最近可用快照
                     ↓
-              XFCE root 桌面
+          KDE Plasma 6 root 桌面
                     ↓
        用户启动脚本 / OpenClaw / Chrome
 ```
@@ -58,7 +59,7 @@ Supervisor / Xvnc / noVNC / memory-guardian
 
 默认备份以下 root 数据：
 
-- `.openclaw`、Chrome 用户资料、XFCE 与输入法配置；
+- `.openclaw`、Chrome 用户资料、KDE Plasma 与输入法配置；
 - `Desktop`、`Documents`、`Downloads`；
 - `Projects`、`Services`、`Startup`；
 - shell 历史和 Git 基础配置。
@@ -102,6 +103,12 @@ supervisorctl restart openclaw
 ```
 
 这些命令不会输出 API key 或 VNC 密码。
+
+Chrome 在容器启动时会启动一次，供 OpenClaw 通过本机 CDP 使用。用户正常关闭所有 Chrome 窗口后，Supervisor 不会再强制拉起；异常退出仍会自动恢复。需要重新启动时，双击桌面的“Chrome（OpenClaw 受管）”，或运行：
+
+```bash
+supervisorctl start chrome
+```
 
 ## ModelScope
 

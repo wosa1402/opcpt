@@ -20,7 +20,7 @@ deploy/modelscope/
 4. 使用 `platform/2v-cpu-16g-mem`，服务端口保持 `7860`。
 5. 配置下面列出的 Secrets 和 Variables，然后启动构建。
 
-这个方式只拉取 GHCR 成品镜像，通常比在 ModelScope 重新执行 Debian、XFCE、Chrome 和 OpenClaw 的完整安装更快、更稳定。如果平台无法访问 GHCR，可改为上传整个仓库；根目录的 `Dockerfile` 和 `ms_deploy.json` 会执行完整源码构建。
+这个方式只拉取 GHCR 成品镜像，通常比在 ModelScope 重新执行 Debian、KDE Plasma、Chrome 和 OpenClaw 的完整安装更快、更稳定。如果平台无法访问 GHCR，可改为上传整个仓库；根目录的 `Dockerfile` 和 `ms_deploy.json` 会执行完整源码构建。
 
 ## 环境配置
 
@@ -63,6 +63,10 @@ ModelScope 官方把 `/mnt/workspace` 描述为持久化卷；实际实例可能
 
 容器启动时先拉起 Xvnc、noVNC 和内存守护，再恢复快照。Docker 健康检查不检查 OpenClaw Gateway，因此 OpenClaw 故障不会主动触发整个容器重启。
 
+noVNC 默认启用 `Remote Resizing`，连接后会让远程桌面跟随浏览器可用尺寸，不再把固定的 `1600x900` 画面居中并留下大块黑边。如果浏览器或 VNC 客户端不支持动态分辨率，可从 noVNC 左侧控制栏的设置中改为 `Local Scaling`。
+
+Chrome 由 Supervisor 启动一次，为 OpenClaw 提供本机浏览器控制接口。正常关闭 Chrome 后会保持关闭；异常崩溃才会自动重启。需要恢复时可双击 KDE 桌面的“Chrome（OpenClaw 受管）”，或在终端运行 `supervisorctl start chrome`。Chrome 停止不影响 noVNC 和 KDE 桌面，但会暂时禁用 OpenClaw 的浏览器操作。
+
 普通应用 OOM 时，内存守护会优先停止 Chrome/OpenClaw，并尽量保护 Supervisor、Xvnc 和 noVNC。但以下情况无法由镜像避免短暂离线：
 
 - 平台回收或重启整个实例；
@@ -84,7 +88,7 @@ IMPORT_LEGACY_BACKUP=1
 
 ## 首次验收
 
-1. 打开 noVNC 并确认 root XFCE 桌面可用。
+1. 打开 noVNC，确认画面跟随浏览器尺寸并且 root KDE Plasma 6 桌面可用。
 2. 运行 `openclaw-container-status`，确认 health 不依赖 OpenClaw。
 3. 运行 `openclaw-backup-now`，确认生成快照及 SHA-256。
 4. 重启 OpenClaw，确认 noVNC 不断开。

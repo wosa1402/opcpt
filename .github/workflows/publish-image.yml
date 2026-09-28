@@ -61,7 +61,100 @@ jobs:
             type=ref,event=tag
           labels: |
             org.opencontainers.image.title=OpenClaw Rescue Desktop
-            org.opencontainers.image.description=Root XFCE desktop with a protected noVNC rescue path and versioned recovery
+            org.opencontainers.image.description=Root KDE Plasma 6 desktop with a protected noVNC rescue path and versioned recovery
+
+      - name: Build image for runtime validation
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: local/openclaw-smoke:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Smoke-test KDE, noVNC, and managed Chrome
+        id: smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          container=openclaw-smoke
+          image="local/openclaw-smoke:${GITHUB_SHA}"
+          docker run -d --name "${container}" --shm-size=1g \
+            -e VNC_PASSWD=smoke123 \
+            "${image}"
+
+          health=''
+          for _ in $(seq 1 75); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${container}")"
+            running="$(docker inspect --format '{{.State.Running}}' "${container}")"
+            [[ "${running}" == true ]] || { echo 'Container exited during startup.' >&2; exit 1; }
+            [[ "${health}" == healthy ]] && break
+            sleep 2
+          done
+          [[ "${health}" == healthy ]] || { echo "Rescue health did not become ready: ${health}" >&2; exit 1; }
+
+          desktop_ready=0
+          for _ in $(seq 1 75); do
+            if docker exec "${container}" pgrep -x plasmashell > /dev/null \
+              && docker exec "${container}" pgrep -x kwin_x11 > /dev/null; then
+              desktop_ready=1
+              break
+            fi
+            sleep 2
+          done
+          [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
+          docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
+
+          docker exec -i "${container}" node --input-type=module <<'NODE'
+          const deadline = Date.now() + 120_000;
+          let endpoint;
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch("http://127.0.0.1:9222/json/version");
+              if (response.ok) {
+                endpoint = (await response.json()).webSocketDebuggerUrl;
+                break;
+              }
+            } catch {}
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (!endpoint) throw new Error("Chrome CDP did not become ready");
+          const socket = new WebSocket(endpoint);
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("Chrome did not close cleanly")), 15_000);
+            socket.addEventListener("open", () => socket.send(JSON.stringify({ id: 1, method: "Browser.close" })));
+            socket.addEventListener("close", () => { clearTimeout(timer); resolve(); });
+            socket.addEventListener("error", reject);
+          });
+          NODE
+
+          chrome_status=''
+          for _ in $(seq 1 20); do
+            chrome_status="$(docker exec "${container}" supervisorctl status chrome 2>&1 || true)"
+            [[ "${chrome_status}" == *' EXITED '* ]] && break
+            sleep 1
+          done
+          [[ "${chrome_status}" == *' EXITED '* ]] || { echo "Chrome did not stay closed: ${chrome_status}" >&2; exit 1; }
+          sleep 5
+          chrome_status="$(docker exec "${container}" supervisorctl status chrome 2>&1 || true)"
+          [[ "${chrome_status}" == *' EXITED '* ]] || { echo "Chrome was reopened unexpectedly: ${chrome_status}" >&2; exit 1; }
+          docker exec "${container}" /usr/local/bin/healthcheck
+
+          docker exec "${container}" /usr/local/bin/start-managed-chrome
+          chrome_status="$(docker exec "${container}" supervisorctl status chrome 2>&1 || true)"
+          [[ "${chrome_status}" == *' RUNNING '* ]] || { echo "Managed Chrome could not be reopened: ${chrome_status}" >&2; exit 1; }
+
+      - name: Show runtime logs on failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: docker logs openclaw-smoke
+
+      - name: Remove runtime validation container
+        if: always()
+        run: docker rm -f openclaw-smoke >/dev/null 2>&1 || true
 
       - name: Build and publish image
         id: build

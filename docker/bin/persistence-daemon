@@ -34,7 +34,13 @@ for candidate in \
     /root/Projects \
     /root/Services \
     /root/Startup \
-    /root/.config/xfce4; do
+    /root/.config/kdeglobals \
+    /root/.config/kwinrc \
+    /root/.config/ksmserverrc \
+    /root/.config/kscreenlockerrc \
+    /root/.config/baloofilerc \
+    /root/.config/plasma-org.kde.plasma.desktop-appletsrc \
+    /root/.local/share/plasma; do
     [[ -e "${candidate}" ]] && watch_paths+=("${candidate}")
 done
 

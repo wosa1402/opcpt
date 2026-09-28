@@ -1,0 +1,11 @@
+[General]
+ColorScheme=BreezeLight
+
+[Icons]
+Theme=breeze
+
+[KDE]
+AnimationDurationFactor=0
+SingleClick=false
+widgetStyle=Breeze
+

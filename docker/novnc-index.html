@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw Rescue Desktop</title>
+</head>
+<body>
+  <p>正在打开远程桌面……</p>
+  <script>
+    (() => {
+      const current = new URL(window.location.href);
+      const target = new URL("vnc.html", current);
+      current.searchParams.forEach((value, key) => target.searchParams.append(key, value));
+      if (!target.searchParams.has("resize")) target.searchParams.set("resize", "remote");
+      window.location.replace(target.href);
+    })();
+  </script>
+</body>
+</html>

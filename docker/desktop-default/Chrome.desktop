@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Chrome（OpenClaw 受管）
+Comment=启动或打开由 Supervisor 管理的 Chrome
+Exec=/usr/local/bin/start-managed-chrome
+Icon=google-chrome
+Terminal=false
+

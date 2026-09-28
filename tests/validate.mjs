@@ -24,8 +24,17 @@ const guardian = await read("docker/bin/memory-guardian");
 const xvnc = await read("docker/bin/service-xvnc");
 const novnc = await read("docker/bin/service-novnc");
 const desktop = await read("docker/bin/service-desktop");
+const desktopSession = await read("docker/bin/start-kde-session");
 const openclawService = await read("docker/bin/service-openclaw");
 const chrome = await read("docker/bin/start-chrome-session");
+const managedChrome = await read("docker/bin/start-managed-chrome");
+const persistence = await read("docker/bin/persistence-daemon");
+const novncIndex = await read("docker/novnc-index.html");
+const kwinConfig = await read("docker/plasma-default/kwinrc");
+const balooConfig = await read("docker/plasma-default/baloofilerc");
+const sessionConfig = await read("docker/plasma-default/ksmserverrc");
+const startKdeConfig = await read("docker/plasma-default/startkderc");
+const chromeDesktop = await read("docker/desktop-default/Chrome.desktop");
 const compose = await read("compose.yaml");
 const envExample = await read(".env.example");
 const readme = await read("README.md");
@@ -36,7 +45,7 @@ const modelScopeDockerfile = await read("deploy/modelscope/Dockerfile");
 const modelScopeDeploy = JSON.parse(await read("deploy/modelscope/ms_deploy.json"));
 const modelScopeSourceDeploy = JSON.parse(await read("ms_deploy.json"));
 
-check(/^FROM node:\$\{NODE_VERSION\}-bookworm-slim$/m.test(dockerfile), "Dockerfile must use the clean Node/Debian base");
+check(/^FROM node:\$\{NODE_VERSION\}-trixie-slim$/m.test(dockerfile), "Dockerfile must use the clean Debian 13 Node base");
 check(!dockerfile.includes("ghcr.io/tunmax"), "Dockerfile must not inherit the shared image");
 check(dockerfile.includes("ARG OPENCLAW_VERSION=2026.9.6"), "OpenClaw must be version-pinned");
 check(dockerfile.includes('ENTRYPOINT ["/usr/bin/tini"'), "tini must remain PID 1");
@@ -45,7 +54,13 @@ check(dockerfile.includes("openclaw --version"), "the pinned OpenClaw binary mus
 check(dockerfile.includes("openclaw config validate --json"), "the OpenClaw template must be validated during the image build");
 check(dockerfile.includes("OPENCLAW_COMPAT_API_KEY=build-validation-only"), "build validation must exercise the generic provider environment");
 check(dockerfile.includes("inotify-tools"), "the persistence watcher dependency must be installed");
-check(dockerfile.includes("xfce4-whiskermenu-plugin"), "the Windows-like application menu must be installed");
+check(dockerfile.includes("kde-plasma-desktop"), "KDE Plasma must be installed");
+check(dockerfile.includes("kwin-x11"), "the KDE X11 window manager must be installed for TigerVNC");
+check(dockerfile.includes("dolphin"), "the KDE file manager must be installed explicitly");
+check(dockerfile.includes("konsole"), "the KDE terminal must be installed explicitly");
+check(dockerfile.includes("command -v startplasma-x11"), "the Plasma X11 entry point must be checked during build");
+check(!dockerfile.includes("xfce4-whiskermenu-plugin"), "the retired XFCE desktop must not remain installed");
+check(dockerfile.includes("UI.initSetting('resize', 'remote')"), "direct noVNC visits must default to remote resizing");
 
 const deepseekProvider = template.models.providers["deepseek-compatible"];
 check(deepseekProvider.apiKey === "${OPENCLAW_COMPAT_API_KEY}", "DeepSeek key must use the internal generic environment reference");
@@ -82,15 +97,32 @@ check(!supervisor.includes("user=openclaw"), "all services must run as root");
 check((supervisor.match(/user=root/g) ?? []).length >= 9, "supervised programs must explicitly run as root");
 check(supervisor.indexOf("[program:novnc]") < supervisor.indexOf("[program:bootstrap]"), "noVNC must be ordered before restore/bootstrap");
 check(supervisor.indexOf("[program:bootstrap]") < supervisor.indexOf("[program:openclaw]"), "OpenClaw must start after restore/bootstrap");
+const chromeProgram = supervisor.match(/\[program:chrome\][\s\S]*?(?=\n\[|$)/)?.[0] ?? "";
+check(chromeProgram.includes("autostart=true"), "Chrome must remain available after container startup");
+check(chromeProgram.includes("autorestart=unexpected"), "Chrome must restart after crashes but stay closed after a normal exit");
+check(chromeProgram.includes("exitcodes=0"), "a normal Chrome close must be classified as expected");
+check(!chromeProgram.includes("autorestart=true"), "Chrome must not be forced back open after a normal close");
 
 check(xvnc.includes("set-oom-score -1000"), "Xvnc must request OOM immunity");
 check(novnc.includes("set-oom-score -1000"), "noVNC must request OOM immunity");
 check(xvnc.includes("-localhost yes"), "VNC must listen on loopback only");
 check(!xvnc.includes("-localhost no"), "VNC must never listen publicly");
 check(desktop.includes("set-oom-score 300"), "desktop descendants must remain killable before rescue services");
+check(desktop.includes("start-kde-session"), "the supervised desktop must start KDE Plasma");
+check(desktopSession.includes("startplasma-x11"), "KDE must use the X11 session supported by TigerVNC");
+check(desktopSession.includes("XDG_CURRENT_DESKTOP=KDE"), "the desktop environment must identify itself as KDE");
+check(kwinConfig.includes("Enabled=false"), "KWin compositing must be disabled for a stable software-rendered VNC session");
+check(balooConfig.includes("Indexing-Enabled=false"), "Baloo indexing must be disabled to preserve remote desktop resources");
+check(sessionConfig.includes("loginMode=emptySession"), "KDE must not restore stale GUI applications on login");
+check(startKdeConfig.includes("systemdBoot=false"), "KDE must use its non-systemd session fallback inside the container");
 check(openclawService.includes("set-oom-score 500"), "OpenClaw must be less protected than the desktop");
 check(chrome.includes("set-oom-score 700"), "Chrome must be reclaimed before OpenClaw");
 check((chrome.match(/--no-sandbox/g) ?? []).length === 1, "root Chrome must have one explicit no-sandbox flag");
+check(managedChrome.includes("supervisorctl start chrome"), "the desktop must provide a supported way to reopen managed Chrome");
+check(chromeDesktop.includes("start-managed-chrome"), "the managed Chrome desktop shortcut must call the supervisor-aware launcher");
+
+check(novncIndex.includes('target.searchParams.set("resize", "remote")'), "the noVNC landing page must request remote resizing");
+check(!novncIndex.includes('set("resize", "off")'), "the noVNC landing page must not force fixed-size rendering");
 
 check(healthcheck.includes("VNC_PORT"), "healthcheck must verify Xvnc");
 check(healthcheck.includes("NOVNC_PORT"), "healthcheck must verify noVNC");
@@ -115,8 +147,11 @@ check(guardian.includes("supervisord|Xtigervnc|websockify|memory-guardian|tini|d
 
 check(backupPaths.includes(".openclaw"), "OpenClaw state must be backed up");
 check(backupPaths.includes(".config/google-chrome"), "Chrome profile must be backed up");
+check(backupPaths.includes(".config/plasma-org.kde.plasma.desktop-appletsrc"), "the KDE desktop layout must be backed up");
+check(backupPaths.includes(".config/kdeglobals"), "KDE appearance settings must be backed up");
 check(backupPaths.includes("Projects"), "user projects must be backed up");
 check(backupPaths.includes("Startup"), "root startup automation must be backed up");
+check(persistence.includes("/root/.config/kwinrc"), "the persistence daemon must watch KDE settings");
 check(backupExcludes.includes("node_modules"), "rebuildable dependency trees must be excluded");
 check(backupExcludes.includes(".openclaw/cache"), "rebuildable OpenClaw cache data must be excluded");
 check(backupExcludes.includes("*-wal"), "live WAL files must not be copied directly");
@@ -129,11 +164,19 @@ check(/^DEEPSEEK_BASE_URL=\s*$/m.test(envExample), "example relay URL must be bl
 check(envExample.includes("MEMORY_CRITICAL_PERCENT=88"), "memory protection defaults must be documented in env example");
 check(readme.includes("/root（本地高速运行）") || readme.includes("`/root` 是高速运行目录"), "README must describe local runtime storage");
 check(readme.includes("平台回收"), "README must state the whole-container failure boundary");
+check(readme.includes("KDE Plasma 6"), "README must describe the shipped desktop");
+check(readme.includes("Remote Resizing"), "README must document automatic noVNC sizing");
+check(readme.includes("正常关闭所有 Chrome 窗口后"), "README must document the managed Chrome close behavior");
 check(publishWorkflow.includes("packages: write"), "GitHub Actions must have permission to publish to GHCR");
 check(publishWorkflow.includes("platforms: linux/amd64"), "cloud image builds must target the deployment architecture explicitly");
 check(publishWorkflow.includes("password: ${{ secrets.GITHUB_TOKEN }}"), "GHCR publishing must use GitHub's ephemeral workflow token");
-check(!publishWorkflow.includes("DEEPSEEK_API_KEY"), "runtime provider credentials must not be exposed to image builds");
-check(!publishWorkflow.includes("VNC_PASSWD"), "the VNC password must not be exposed to image builds");
+check(!publishWorkflow.includes("secrets.DEEPSEEK_API_KEY"), "runtime provider credentials must not be exposed to image builds");
+check(!publishWorkflow.includes("secrets.VNC_PASSWD"), "the user's VNC password must not be exposed to image builds");
+check(publishWorkflow.includes("Smoke-test KDE, noVNC, and managed Chrome"), "the published image must pass a real runtime smoke test");
+check(publishWorkflow.includes("pgrep -x plasmashell"), "the runtime smoke test must verify KDE Plasma");
+check(publishWorkflow.includes('method: "Browser.close"'), "the runtime smoke test must exercise a normal Chrome close");
+check(publishWorkflow.includes("start-managed-chrome"), "the runtime smoke test must verify manual Chrome reopening");
+check(publishWorkflow.indexOf("Smoke-test KDE, noVNC, and managed Chrome") < publishWorkflow.indexOf("Build and publish image"), "runtime validation must finish before the image is published");
 check(/^FROM ghcr\.io\/wosa1402\/opcpt@sha256:[0-9a-f]{64}$/m.test(modelScopeDockerfile), "ModelScope must pin the prebuilt image by OCI digest");
 check(!modelScopeDockerfile.includes(":latest"), "ModelScope deployment must not float on the latest tag");
 check(modelScopeDockerfile.includes("EXPOSE 7860"), "ModelScope deployment must expose port 7860");
@@ -143,6 +186,7 @@ check(modelScopeDeploy.port === 7860, "ModelScope prebuilt deployment must publi
 check(JSON.stringify(modelScopeSourceDeploy) === JSON.stringify(modelScopeDeploy), "source and prebuilt ModelScope deployment settings must stay aligned");
 
 const binNames = (await readdir(path.join(root, "docker/bin"))).sort();
+const plasmaConfigNames = (await readdir(path.join(root, "docker/plasma-default"))).sort();
 const runtimeTexts = [dockerfile, templateText, supervisor];
 for (const name of binNames) {
   const script = await read(`docker/bin/${name}`);
@@ -164,6 +208,8 @@ const sizeChecked = [
   "docker/openclaw-template.json",
   "docker/backup-paths.txt",
   "docker/backup-excludes.txt",
+  "docker/novnc-index.html",
+  ...plasmaConfigNames.map((name) => `docker/plasma-default/${name}`),
   ...binNames.map((name) => `docker/bin/${name}`),
 ];
 for (const relativePath of sizeChecked) {

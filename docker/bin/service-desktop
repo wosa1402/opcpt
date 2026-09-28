@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 for _ in $(seq 1 120); do
     if [[ -S /tmp/.X11-unix/X1 && -e /run/openclaw/bootstrap.ready ]]; then
-        exec /usr/bin/dbus-run-session -- /usr/local/bin/start-xfce-session
+        exec /usr/bin/dbus-run-session -- /usr/local/bin/start-kde-session
     fi
     sleep 1
 done
