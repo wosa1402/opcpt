@@ -1,0 +1,127 @@
+{
+  "agents": {
+    "defaults": {
+      "maxConcurrent": 1,
+      "model": {
+        "primary": "deepseek-compatible/${OPENCLAW_COMPAT_MODEL_ID}"
+      },
+      "subagents": {
+        "maxConcurrent": 1
+      },
+      "thinkingDefault": "off",
+      "workspace": "${HOME}/.openclaw/workspace"
+    }
+  },
+  "models": {
+    "mode": "replace",
+    "providers": {
+      "deepseek-compatible": {
+        "api": "${OPENCLAW_COMPAT_API}",
+        "apiKey": "${OPENCLAW_COMPAT_API_KEY}",
+        "baseUrl": "${OPENCLAW_COMPAT_BASE_URL}",
+        "models": [
+          {
+            "id": "${OPENCLAW_COMPAT_MODEL_ID}",
+            "name": "${OPENCLAW_COMPAT_MODEL_NAME}"
+          }
+        ]
+      }
+    }
+  },
+  "channels": {},
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "bash": false
+  },
+  "gateway": {
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "bind": "loopback",
+    "mode": "local",
+    "port": 18789,
+    "tailscale": {
+      "mode": "off"
+    },
+    "controlUi": {
+      "allowedOrigins": [
+        "http://127.0.0.1:18789",
+        "http://localhost:18789"
+      ]
+    }
+  },
+  "plugins": {
+    "allow": [
+      "browser",
+      "memory-core",
+      "workboard"
+    ],
+    "entries": {
+      "browser": {
+        "enabled": true
+      },
+      "memory-core": {
+        "enabled": true,
+        "config": {
+          "dreaming": {
+            "enabled": false
+          }
+        }
+      },
+      "workboard": {
+        "enabled": true
+      }
+    },
+    "enabled": true
+  },
+  "memory": {
+    "search": {
+      "enabled": false
+    }
+  },
+  "browser": {
+    "enabled": true,
+    "evaluateEnabled": true,
+    "defaultProfile": "desktop",
+    "noSandbox": false,
+    "ssrfPolicy": {
+      "allowedHostnames": [
+        "127.0.0.1",
+        "localhost"
+      ]
+    },
+    "tabCleanup": {
+      "enabled": true
+    },
+    "profiles": {
+      "desktop": {
+        "cdpUrl": "http://127.0.0.1:9222",
+        "attachOnly": true
+      }
+    }
+  },
+  "tools": {
+    "profile": "full",
+    "sessions": {
+      "visibility": "all"
+    },
+    "exec": {
+      "ask": "off",
+      "host": "gateway",
+      "security": "full"
+    },
+    "elevated": {
+      "enabled": false
+    }
+  },
+  "update": {
+    "channel": "stable",
+    "checkOnStart": false,
+    "auto": {
+      "enabled": false
+    }
+  }
+}

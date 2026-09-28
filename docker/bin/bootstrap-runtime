@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score 200 bootstrap || true
+
+ready_file=/run/openclaw/bootstrap.ready
+status_file=/run/openclaw/bootstrap.status
+
+finish() {
+    local exit_code=$?
+    if (( exit_code == 0 )); then
+        printf 'ready\n' > "${status_file}"
+    else
+        printf 'degraded exit=%s\n' "${exit_code}" > "${status_file}"
+    fi
+    touch "${ready_file}"
+}
+trap finish EXIT
+
+echo '[bootstrap] 正在从最近一份有效快照恢复数据。'
+if ! /usr/local/bin/openclaw-restore-latest; then
+    echo '[bootstrap] 恢复失败；保留救援桌面并以空白运行目录继续启动。' >&2
+fi
+
+install -d -m 0700 \
+    /root/.config \
+    /root/.config/google-chrome \
+    /root/.openclaw \
+    /root/.openclaw/workspace \
+    /root/.local/share \
+    /root/Desktop \
+    /root/Documents \
+    /root/Downloads \
+    /root/Projects \
+    /root/Services \
+    /root/Startup
+
+if [[ ! -d /root/.config/xfce4 ]]; then
+    cp -a /usr/local/share/openclaw/xfce4-default /root/.config/xfce4
+fi
+cp -an /usr/local/share/openclaw/desktop-default/. /root/Desktop/
+find /root/Desktop -maxdepth 1 -type f -name '*.desktop' -exec chmod 0755 {} +
+
+config_path=/root/.openclaw/openclaw.json
+if [[ "${RESET_OPENCLAW_CONFIG:-0}" == 1 && -f "${config_path}" ]]; then
+    config_backup="${config_path}.backup.$(date -u +%Y%m%dT%H%M%SZ)"
+    cp -p -- "${config_path}" "${config_backup}"
+    install -m 0600 /usr/local/share/openclaw/openclaw-template.json "${config_path}"
+    echo "[bootstrap] 已重置 OpenClaw 配置；旧文件保存在 ${config_backup}。"
+elif [[ ! -f "${config_path}" ]]; then
+    if [[ -n "${OPENCLAW_CONFIG_SOURCE:-}" && -f "${OPENCLAW_CONFIG_SOURCE}" ]]; then
+        install -m 0600 "${OPENCLAW_CONFIG_SOURCE}" "${config_path}"
+        echo '[bootstrap] 已安装用户提供的 OpenClaw 配置。'
+    else
+        install -m 0600 /usr/local/share/openclaw/openclaw-template.json "${config_path}"
+        echo '[bootstrap] 已初始化 DeepSeek 兼容配置（不含密钥）。'
+    fi
+fi
+
+rm -f -- /root/.config/google-chrome/SingletonCookie \
+    /root/.config/google-chrome/SingletonLock \
+    /root/.config/google-chrome/SingletonSocket
+
+touch /run/openclaw/backup.dirty
+echo '[bootstrap] 运行目录已经准备完成。'

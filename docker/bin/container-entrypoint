@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+
+log() {
+    printf '[entrypoint] %s\n' "$*"
+}
+
+export HOME=/root
+export USER=root
+export LOGNAME=root
+export XDG_CONFIG_HOME=/root/.config
+export XDG_DATA_HOME=/root/.local/share
+export XDG_CACHE_HOME=/root/.cache
+export XDG_RUNTIME_DIR=/run/user/0
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export INPUT_METHOD=fcitx
+export SDL_IM_MODULE=fcitx
+
+install -d -m 0700 /root /root/.config /root/.local /root/.local/share /root/.cache
+install -d -m 0700 /root/.vnc "${XDG_RUNTIME_DIR}" /run/openclaw /run/openclaw-secrets
+install -d -m 0750 /var/log/openclaw /data
+rm -f -- /run/openclaw/bootstrap.ready /run/openclaw/bootstrap.status
+
+if [[ -n "${OPENCLAW_PERSIST_DIR:-}" ]]; then
+    persist_root="${OPENCLAW_PERSIST_DIR}"
+elif [[ -d /mnt/workspace && -w /mnt/workspace ]]; then
+    persist_root=/mnt/workspace/openclaw-data
+else
+    persist_root=/data/openclaw-data
+fi
+
+case "${persist_root}" in
+    /*) ;;
+    *)
+        log 'OPENCLAW_PERSIST_DIR 必须是绝对路径。'
+        exit 1
+        ;;
+esac
+
+case "${persist_root}" in
+    /|/root|/root/*|/run|/run/*|/tmp|/tmp/*)
+        log "拒绝把运行目录 ${persist_root} 当作备份目标。"
+        exit 1
+        ;;
+esac
+
+mkdir -p -- "${persist_root}/snapshots"
+chmod 0700 "${persist_root}" "${persist_root}/snapshots" 2>/dev/null || true
+if ! touch "${persist_root}/.write-test.$$"; then
+    log "持久化目录不可写：${persist_root}"
+    exit 1
+fi
+rm -f -- "${persist_root}/.write-test.$$"
+export OPENCLAW_PERSIST_DIR="${persist_root}"
+
+vnc_password_file=/root/.vnc/passwd
+if [[ -z "${VNC_PASSWD:-}" ]]; then
+    log '拒绝以无密码 VNC 启动。请通过平台 Secret 设置 VNC_PASSWD。'
+    exit 1
+fi
+if (( ${#VNC_PASSWD} < 8 )); then
+    log 'VNC_PASSWD 至少需要 8 个字符。'
+    exit 1
+fi
+if (( ${#VNC_PASSWD} > 8 )); then
+    log '提示：传统 VNC 认证只使用密码的前 8 个字符。'
+fi
+printf '%s\n' "${VNC_PASSWD}" | tigervncpasswd -f > "${vnc_password_file}"
+chmod 0600 "${vnc_password_file}"
+unset VNC_PASSWD
+
+provider_incomplete=0
+if [[ -z "${DEEPSEEK_BASE_URL:-}" ]]; then
+    DEEPSEEK_BASE_URL=http://127.0.0.1:9
+    provider_incomplete=1
+fi
+if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
+    DEEPSEEK_API_KEY=not-configured
+    provider_incomplete=1
+fi
+DEEPSEEK_MODEL_ID="${DEEPSEEK_MODEL_ID:-deepseek-chat}"
+DEEPSEEK_MODEL_NAME="${DEEPSEEK_MODEL_NAME:-${DEEPSEEK_MODEL_ID}}"
+DEEPSEEK_API="${DEEPSEEK_API:-openai-completions}"
+OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$(openssl rand -hex 32)}"
+
+runtime_env_file=/run/openclaw-secrets/provider.env
+gateway_token_file=/run/openclaw-secrets/gateway-token
+printf '%s' "${OPENCLAW_GATEWAY_TOKEN}" > "${gateway_token_file}"
+{
+    printf 'export OPENCLAW_GATEWAY_TOKEN=%q\n' "${OPENCLAW_GATEWAY_TOKEN}"
+    # Do not expose DEEPSEEK_API_KEY to the OpenClaw process. OpenClaw treats
+    # that standard variable as a request to auto-install its official
+    # DeepSeek plugin. This image uses the generic OpenAI-compatible provider
+    # and keeps all runtime dependencies fixed at image build time.
+    printf 'export OPENCLAW_COMPAT_BASE_URL=%q\n' "${DEEPSEEK_BASE_URL}"
+    printf 'export OPENCLAW_COMPAT_API_KEY=%q\n' "${DEEPSEEK_API_KEY}"
+    printf 'export OPENCLAW_COMPAT_MODEL_ID=%q\n' "${DEEPSEEK_MODEL_ID}"
+    printf 'export OPENCLAW_COMPAT_MODEL_NAME=%q\n' "${DEEPSEEK_MODEL_NAME}"
+    printf 'export OPENCLAW_COMPAT_API=%q\n' "${DEEPSEEK_API}"
+} > "${runtime_env_file}"
+chmod 0600 "${runtime_env_file}" "${gateway_token_file}"
+
+export OPENCLAW_RUNTIME_ENV_FILE="${runtime_env_file}"
+export OPENCLAW_GATEWAY_TOKEN_FILE="${gateway_token_file}"
+unset OPENCLAW_GATEWAY_TOKEN DEEPSEEK_BASE_URL DEEPSEEK_API_KEY
+unset DEEPSEEK_MODEL_ID DEEPSEEK_MODEL_NAME DEEPSEEK_API
+
+if (( provider_incomplete )); then
+    log 'DeepSeek 渠道尚未完整配置；救援桌面会启动，但模型调用暂不可用。'
+fi
+
+if [[ ! -s /etc/machine-id ]]; then
+    dbus-uuidgen --ensure=/etc/machine-id
+fi
+install -d -m 0755 /run/dbus
+install -d -m 1777 /tmp/.X11-unix
+rm -f -- /tmp/.X1-lock /tmp/.X11-unix/X1
+
+export VNC_GEOMETRY="${VNC_GEOMETRY:-1600x900}"
+export VNC_DEPTH="${VNC_DEPTH:-24}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=${OPENCLAW_NODE_HEAP_MB:-2048}}"
+
+if [[ -w /sys/fs/cgroup/memory.oom.group ]]; then
+    printf '0' > /sys/fs/cgroup/memory.oom.group 2>/dev/null || true
+fi
+/usr/local/bin/set-oom-score -1000 entrypoint || true
+if [[ -w /proc/1/oom_score_adj ]]; then
+    printf '%s' -1000 > /proc/1/oom_score_adj 2>/dev/null || true
+fi
+
+filesystem_type="$(findmnt -n -o FSTYPE -T "${persist_root}" 2>/dev/null || printf unknown)"
+log "root 桌面运行目录：/root"
+log "版本化备份目录：${persist_root}（${filesystem_type}）"
+log "noVNC 端口：${NOVNC_PORT}；OpenClaw Gateway 仅监听容器回环地址。"
+log '正在启动救援桌面；noVNC/Xvnc 会先于数据恢复和 OpenClaw 上线。'
+
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/openclaw.conf

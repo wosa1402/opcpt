@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+persist_root="${OPENCLAW_PERSIST_DIR:?OPENCLAW_PERSIST_DIR is required}"
+snapshot_dir="${persist_root}/snapshots"
+paths_file=/usr/local/share/openclaw/backup-paths.txt
+excludes_file=/usr/local/share/openclaw/backup-excludes.txt
+status_file=/run/openclaw/backup.status
+keep="${BACKUP_KEEP:-5}"
+max_mib="${BACKUP_MAX_MIB:-4096}"
+
+log() {
+    printf '[backup] %s\n' "$*"
+}
+
+case "${persist_root}" in
+    /|/root|/root/*|/run|/run/*|/tmp|/tmp/*)
+        log "unsafe persistence root: ${persist_root}"
+        exit 2
+        ;;
+esac
+
+if [[ ! "${keep}" =~ ^[1-9][0-9]*$ ]] || (( keep > 20 )); then
+    log "BACKUP_KEEP 必须在 1 到 20 之间。"
+    exit 2
+fi
+if [[ ! "${max_mib}" =~ ^[1-9][0-9]*$ ]]; then
+    log 'BACKUP_MAX_MIB 必须是正整数。'
+    exit 2
+fi
+
+install -d -m 0700 /run/openclaw
+exec 9>/run/openclaw/backup.lock
+if ! flock -n 9; then
+    log '已有备份正在运行，本次跳过。'
+    exit 75
+fi
+
+/usr/local/bin/set-oom-score 600 backup || true
+renice 10 -p $$ > /dev/null 2>&1 || true
+ionice -c 3 -p $$ > /dev/null 2>&1 || true
+
+mkdir -p -- "${snapshot_dir}"
+stage="$(mktemp -d /tmp/openclaw-backup-stage.XXXXXX)"
+archive="$(mktemp /tmp/openclaw-snapshot.XXXXXX.tar.zst)"
+cleanup() {
+    rm -rf -- "${stage}"
+    rm -f -- "${archive}"
+}
+trap cleanup EXIT
+mkdir -p -- "${stage}/root" "${stage}/metadata"
+
+# OpenClaw-managed plugins are executable state, not ordinary project build
+# output. Preserve their pinned payloads so a snapshot restore never needs a
+# surprise network reinstall. The normal pass below still excludes all other
+# node_modules trees.
+if [[ -d /root/.openclaw/npm/projects ]]; then
+    rsync -aR \
+        --exclude='**/.cache/**' \
+        --exclude='**/*.tmp' \
+        --exclude='**/*.partial' \
+        "/root/./.openclaw/npm/projects" "${stage}/root/"
+fi
+
+while IFS= read -r relative; do
+    [[ -n "${relative}" && "${relative}" != \#* ]] || continue
+    source_path="/root/${relative}"
+    if [[ -e "${source_path}" || -L "${source_path}" ]]; then
+        rsync -aR --exclude-from="${excludes_file}" "/root/./${relative}" "${stage}/root/"
+    fi
+done < "${paths_file}"
+
+backup_sqlite_tree() {
+    local tree="$1"
+    [[ -d "${tree}" ]] || return 0
+    while IFS= read -r -d '' database; do
+        [[ -r "${database}" ]] || continue
+        if [[ "$(head -c 15 -- "${database}" 2>/dev/null || true)" != 'SQLite format 3' ]]; then
+            continue
+        fi
+        relative="${database#/root/}"
+        destination="${stage}/root/${relative}"
+        temporary="${destination}.online-backup"
+        mkdir -p -- "$(dirname -- "${destination}")"
+        escaped_temporary="${temporary//\'/\'\'}"
+        if sqlite3 "${database}" ".timeout 5000" ".backup '${escaped_temporary}'" > /dev/null 2>&1; then
+            mv -f -- "${temporary}" "${destination}"
+            rm -f -- "${destination}-wal" "${destination}-shm" "${destination}-journal"
+        else
+            rm -f -- "${temporary}"
+            log "警告：无法在线备份 SQLite 文件 ${relative}；保留普通文件副本。"
+        fi
+    done < <(find "${tree}" -type f -size +15c -print0 2>/dev/null)
+}
+
+backup_sqlite_tree /root/.openclaw
+backup_sqlite_tree /root/.config/google-chrome
+
+apt-mark showmanual 2>/dev/null | sort > "${stage}/metadata/apt-manual.txt" || true
+snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cat > "${stage}/manifest.json" <<EOF
+{"format":1,"created":"${snapshot_time}","openclaw":"${OPENCLAW_VERSION:-unknown}","runtime":"root-local-snapshot"}
+EOF
+
+stage_mib="$(du -sm -- "${stage}" | awk '{print $1}')"
+if (( stage_mib > max_mib )); then
+    printf 'failed snapshot-too-large size_mib=%s limit_mib=%s\n' "${stage_mib}" "${max_mib}" > "${status_file}"
+    log "备份内容 ${stage_mib} MiB，超过 BACKUP_MAX_MIB=${max_mib}；上一份快照未受影响。"
+    exit 1
+fi
+
+log "正在创建一致性快照（暂存数据 ${stage_mib} MiB）。"
+tar --numeric-owner --owner=0 --group=0 -C "${stage}" -cf - . \
+    | zstd -q -1 -T1 -o "${archive}"
+
+name="snapshot-$(date -u +%Y%m%dT%H%M%SZ)-$$.tar.zst"
+partial="${snapshot_dir}/${name}.partial"
+final="${snapshot_dir}/${name}"
+local_hash="$(sha256sum "${archive}" | awk '{print $1}')"
+
+rm -f -- "${partial}"
+cp -- "${archive}" "${partial}"
+remote_hash="$(sha256sum "${partial}" | awk '{print $1}')"
+if [[ "${remote_hash}" != "${local_hash}" ]]; then
+    rm -f -- "${partial}"
+    printf 'failed copy-checksum\n' > "${status_file}"
+    log '持久化卷写入后的校验值不一致；上一份快照未受影响。'
+    exit 1
+fi
+
+mv -f -- "${partial}" "${final}"
+printf '%s\n' "${local_hash}" > "${final}.sha256.partial"
+mv -f -- "${final}.sha256.partial" "${final}.sha256"
+printf '%s\n' "${name}" > "${snapshot_dir}/LATEST.partial"
+mv -f -- "${snapshot_dir}/LATEST.partial" "${snapshot_dir}/LATEST"
+chmod 0600 "${final}" "${final}.sha256" "${snapshot_dir}/LATEST" 2>/dev/null || true
+
+mapfile -t archives < <(find "${snapshot_dir}" -maxdepth 1 -type f -name 'snapshot-*.tar.zst' -printf '%f\n' | sort -r)
+for (( index=keep; index<${#archives[@]}; index++ )); do
+    old="${snapshot_dir}/${archives[index]}"
+    rm -f -- "${old}" "${old}.sha256"
+done
+
+printf 'ok %s size_mib=%s\n' "${name}" "${stage_mib}" > "${status_file}"
+date +%s > /run/openclaw/backup.last-success
+log "快照已保存：${name}"

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=终端
+Comment=以 root 身份打开终端
+Exec=xfce4-terminal
+Icon=utilities-terminal
+Terminal=false

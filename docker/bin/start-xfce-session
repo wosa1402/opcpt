@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+xset s off || true
+xset -dpms || true
+xset s noblank || true
+
+fcitx5 -d --disable=wayland || true
+
+exec /usr/bin/startxfce4

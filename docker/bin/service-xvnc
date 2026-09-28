@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score -1000 xvnc || true
+
+rm -f -- /tmp/.X1-lock /tmp/.X11-unix/X1
+
+exec /usr/bin/Xtigervnc "${DISPLAY:-:1}" \
+    -fg \
+    -desktop 'OpenClaw Rescue Desktop' \
+    -geometry "${VNC_GEOMETRY:-1600x900}" \
+    -depth "${VNC_DEPTH:-24}" \
+    -rfbport "${VNC_PORT:-5901}" \
+    -rfbauth /root/.vnc/passwd \
+    -SecurityTypes VncAuth \
+    -localhost yes \
+    -AlwaysShared

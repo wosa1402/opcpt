@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+persist_root="${OPENCLAW_PERSIST_DIR:?OPENCLAW_PERSIST_DIR is required}"
+snapshot_dir="${persist_root}/snapshots"
+status_file=/run/openclaw/restore.status
+
+log() {
+    printf '[restore] %s\n' "$*"
+}
+
+case "${persist_root}" in
+    /|/root|/root/*|/run|/run/*|/tmp|/tmp/*)
+        log "unsafe persistence root: ${persist_root}"
+        exit 2
+        ;;
+esac
+
+mkdir -p -- "${snapshot_dir}"
+work_dir="$(mktemp -d /tmp/openclaw-restore.XXXXXX)"
+trap 'rm -rf -- "${work_dir}"' EXIT
+
+declare -A seen=()
+candidates=()
+if [[ -r "${snapshot_dir}/LATEST" ]]; then
+    latest="$(tr -d '\r\n' < "${snapshot_dir}/LATEST")"
+    if [[ "${latest}" =~ ^snapshot-[0-9TZ-]+-[0-9]+\.tar\.zst$ ]]; then
+        candidates+=("${latest}")
+        seen["${latest}"]=1
+    fi
+fi
+
+while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] || continue
+    if [[ -z "${seen["${candidate}"]:-}" ]]; then
+        candidates+=("${candidate}")
+        seen["${candidate}"]=1
+    fi
+done < <(find "${snapshot_dir}" -maxdepth 1 -type f -name 'snapshot-*.tar.zst' -printf '%f\n' 2>/dev/null | sort -r)
+
+for candidate in "${candidates[@]}"; do
+    remote_archive="${snapshot_dir}/${candidate}"
+    remote_checksum="${remote_archive}.sha256"
+    [[ -r "${remote_archive}" && -r "${remote_checksum}" ]] || continue
+
+    expected="$(tr -d '[:space:]' < "${remote_checksum}")"
+    [[ "${expected}" =~ ^[0-9a-fA-F]{64}$ ]] || continue
+
+    local_archive="${work_dir}/${candidate}"
+    if ! cp -- "${remote_archive}" "${local_archive}"; then
+        log "无法读取 ${candidate}，尝试更早版本。"
+        continue
+    fi
+    actual="$(sha256sum "${local_archive}" | awk '{print $1}')"
+    if [[ "${actual,,}" != "${expected,,}" ]]; then
+        log "${candidate} 校验失败，尝试更早版本。"
+        continue
+    fi
+    if ! zstd -q -t "${local_archive}"; then
+        log "${candidate} 压缩包损坏，尝试更早版本。"
+        continue
+    fi
+
+    member_list="${work_dir}/members.txt"
+    if ! zstd -q -dc "${local_archive}" | tar -tf - > "${member_list}"; then
+        log "${candidate} 的 tar 目录损坏，尝试更早版本。"
+        continue
+    fi
+    if grep -Eq '(^/|(^|/)\.\.(/|$))' "${member_list}"; then
+        log "${candidate} 包含不安全路径，拒绝恢复。"
+        continue
+    fi
+
+    extract_dir="${work_dir}/extract"
+    rm -rf -- "${extract_dir}"
+    mkdir -p -- "${extract_dir}"
+    if ! zstd -q -dc "${local_archive}" | tar -xf - -C "${extract_dir}"; then
+        log "${candidate} 无法解包，尝试更早版本。"
+        continue
+    fi
+    if ! jq -e '.format == 1' "${extract_dir}/manifest.json" > /dev/null 2>&1; then
+        log "${candidate} 格式无法识别，尝试更早版本。"
+        continue
+    fi
+    if [[ ! -d "${extract_dir}/root" ]]; then
+        log "${candidate} 缺少 root 数据，尝试更早版本。"
+        continue
+    fi
+
+    rsync -a "${extract_dir}/root/" /root/
+    printf 'restored %s\n' "${candidate}" > "${status_file}"
+    log "已恢复 ${candidate}。"
+    exit 0
+done
+
+if [[ "${IMPORT_LEGACY_BACKUP:-0}" == 1 && -d /mnt/workspace/root ]]; then
+    log '没有新格式快照；正在按白名单导入旧镜像的 /mnt/workspace/root。'
+    while IFS= read -r relative; do
+        [[ -n "${relative}" && "${relative}" != \#* ]] || continue
+        source_path="/mnt/workspace/root/${relative}"
+        if [[ -e "${source_path}" || -L "${source_path}" ]]; then
+            rsync -aR --exclude-from=/usr/local/share/openclaw/backup-excludes.txt \
+                "/mnt/workspace/root/./${relative}" /root/
+        fi
+    done < /usr/local/share/openclaw/backup-paths.txt
+    printf 'imported legacy backup\n' > "${status_file}"
+    exit 0
+fi
+
+printf 'fresh start; no valid snapshot\n' > "${status_file}"
+log '没有找到有效快照，按首次启动继续。'

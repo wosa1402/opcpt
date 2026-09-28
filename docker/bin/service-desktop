@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score 300 desktop || true
+
+for _ in $(seq 1 120); do
+    if [[ -S /tmp/.X11-unix/X1 && -e /run/openclaw/bootstrap.ready ]]; then
+        exec /usr/bin/dbus-run-session -- /usr/local/bin/start-xfce-session
+    fi
+    sleep 1
+done
+
+echo '[desktop] X server or bootstrap did not become ready.' >&2
+exit 1

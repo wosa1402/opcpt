@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+score="${1:?usage: set-oom-score SCORE [LABEL]}"
+label="${2:-process}"
+
+if [[ ! "${score}" =~ ^-?[0-9]+$ ]] || (( score < -1000 || score > 1000 )); then
+    echo "[oom] invalid oom_score_adj for ${label}: ${score}" >&2
+    exit 2
+fi
+
+if printf '%s' "${score}" > /proc/self/oom_score_adj 2>/dev/null; then
+    echo "[oom] ${label}: oom_score_adj=${score}"
+    exit 0
+fi
+
+current="$(< /proc/self/oom_score_adj)"
+echo "[oom] ${label}: platform denied oom_score_adj=${score}; current=${current}" >&2
+exit 1

@@ -1,0 +1,16 @@
+# Paths are relative to /root. Missing paths are ignored.
+.openclaw
+.config/google-chrome
+.config/xfce4
+.config/fcitx5
+.config/mimeapps.list
+.local/share
+Desktop
+Documents
+Downloads
+Projects
+Services
+Startup
+.bash_history
+.zsh_history
+.gitconfig

@@ -1,0 +1,11 @@
+.env
+data/
+*.log
+*.tar
+*.tar.gz
+*.zip
+node_modules/
+.npm-cache/
+coverage/
+test-results/
+openclaw.json.backup.*

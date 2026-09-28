@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=文件管理器
+Comment=打开 root 主目录
+Exec=thunar /root
+Icon=system-file-manager
+Terminal=false

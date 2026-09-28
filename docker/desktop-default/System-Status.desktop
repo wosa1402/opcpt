@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=系统与内存状态
+Comment=查看服务、备份和容器内存状态
+Exec=xfce4-terminal --hold --command=/usr/local/bin/openclaw-container-status
+Icon=utilities-system-monitor
+Terminal=false

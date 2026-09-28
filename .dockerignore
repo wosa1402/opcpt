@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+data
+*.log
+*.tar
+*.tar.gz
+*.zip
+tests/node_modules

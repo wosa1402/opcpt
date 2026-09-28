@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score 500 user-startup || true
+
+for _ in $(seq 1 600); do
+    [[ -e /run/openclaw/bootstrap.ready ]] && break
+    sleep 1
+done
+[[ -e /run/openclaw/bootstrap.ready ]] || { echo '[user-startup] bootstrap did not finish.' >&2; exit 1; }
+
+startup=/root/Startup/startup.sh
+if [[ ! -f "${startup}" ]]; then
+    echo '[user-startup] /root/Startup/startup.sh 不存在，跳过用户启动任务。'
+    exit 0
+fi
+
+echo '[user-startup] 正在执行持久化的 root 启动脚本。'
+exec /bin/bash "${startup}"

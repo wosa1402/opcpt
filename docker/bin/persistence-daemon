@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score 600 persistence-daemon || true
+
+ready_file=/run/openclaw/bootstrap.ready
+dirty_file=/run/openclaw/backup.dirty
+last_file=/run/openclaw/backup.last-success
+start_delay="${BACKUP_START_DELAY_SECONDS:-60}"
+min_interval="${BACKUP_MIN_INTERVAL_SECONDS:-120}"
+max_interval="${BACKUP_MAX_INTERVAL_SECONDS:-900}"
+retry_interval="${BACKUP_RETRY_SECONDS:-120}"
+poll_interval="${BACKUP_POLL_SECONDS:-10}"
+watcher_pid=''
+
+for _ in $(seq 1 600); do
+    [[ -e "${ready_file}" ]] && break
+    sleep 1
+done
+[[ -e "${ready_file}" ]] || { echo '[persistence] bootstrap did not finish.' >&2; exit 1; }
+
+started_at="$(date +%s)"
+last_attempt=0
+last_success="${started_at}"
+[[ -r "${last_file}" ]] && last_success="$(< "${last_file}")"
+touch "${dirty_file}"
+
+watch_paths=()
+for candidate in \
+    /root/.openclaw \
+    /root/Desktop \
+    /root/Documents \
+    /root/Downloads \
+    /root/Projects \
+    /root/Services \
+    /root/Startup \
+    /root/.config/xfce4; do
+    [[ -e "${candidate}" ]] && watch_paths+=("${candidate}")
+done
+
+if (( ${#watch_paths[@]} > 0 )); then
+    (
+        inotifywait -q -m -r -e close_write,create,delete,move,attrib \
+            --exclude '(^|/)(\.cache|node_modules|\.venv|venv|Cache|Code Cache|GPUCache)(/|$)' \
+            "${watch_paths[@]}" 2>/dev/null \
+            | while IFS= read -r _; do touch "${dirty_file}"; done
+    ) &
+    watcher_pid=$!
+fi
+
+shutdown() {
+    [[ -n "${watcher_pid}" ]] && kill "${watcher_pid}" 2>/dev/null || true
+    if [[ -e "${dirty_file}" ]]; then
+        echo '[persistence] 正在尝试关闭前的最后一次备份。'
+        timeout "${BACKUP_SHUTDOWN_TIMEOUT_SECONDS:-35}" /usr/local/bin/openclaw-backup-now || true
+    fi
+    exit 0
+}
+trap shutdown TERM INT HUP
+
+while true; do
+    sleep "${poll_interval}"
+    now="$(date +%s)"
+    dirty=0
+    [[ -e "${dirty_file}" ]] && dirty=1
+
+    if (( now - started_at < start_delay )); then
+        continue
+    fi
+    if [[ -e /run/openclaw/backup.suspended ]]; then
+        continue
+    fi
+    if (( now - last_success >= max_interval )); then
+        dirty=1
+        touch "${dirty_file}"
+    fi
+    if (( ! dirty || now - last_attempt < min_interval )); then
+        continue
+    fi
+
+    last_attempt="${now}"
+    rm -f -- "${dirty_file}"
+    if /usr/local/bin/openclaw-backup-now; then
+        last_success="$(date +%s)"
+    else
+        touch "${dirty_file}"
+        min_interval="${retry_interval}"
+        echo '[persistence] 备份失败，稍后重试；已有快照不会被删除。' >&2
+    fi
+done

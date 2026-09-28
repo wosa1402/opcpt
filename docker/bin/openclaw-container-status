@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+bytes_to_mib() {
+    awk -v bytes="$1" 'BEGIN { printf "%.1f MiB", bytes / 1024 / 1024 }'
+}
+
+echo 'Services:'
+supervisorctl status || true
+
+echo
+echo 'Rescue path:'
+printf '  noVNC:  http://0.0.0.0:%s\n' "${NOVNC_PORT:-7860}"
+printf '  VNC:    127.0.0.1:%s\n' "${VNC_PORT:-5901}"
+printf '  health: VNC + noVNC only (independent from OpenClaw)\n'
+
+echo
+echo 'Persistence:'
+printf '  target: %s\n' "${OPENCLAW_PERSIST_DIR:-unavailable}"
+if [[ -n "${OPENCLAW_PERSIST_DIR:-}" ]]; then
+    findmnt -n -o SOURCE,FSTYPE,OPTIONS -T "${OPENCLAW_PERSIST_DIR}" 2>/dev/null \
+        | sed 's/^/  mount:  /' || true
+fi
+for status in restore bootstrap backup memory-guardian; do
+    file="/run/openclaw/${status}.status"
+    if [[ -r "${file}" ]]; then
+        printf '  %-16s %s\n' "${status}:" "$(< "${file}")"
+    fi
+done
+
+echo
+echo 'Container memory:'
+if [[ -r /sys/fs/cgroup/memory.current ]]; then
+    current="$(< /sys/fs/cgroup/memory.current)"
+    maximum="$(< /sys/fs/cgroup/memory.max)"
+    printf '  current: %s\n' "$(bytes_to_mib "${current}")"
+    if [[ "${maximum}" == max ]]; then
+        printf '  limit:   unlimited\n'
+    else
+        printf '  limit:   %s\n' "$(bytes_to_mib "${maximum}")"
+    fi
+elif [[ -r /sys/fs/cgroup/memory/memory.usage_in_bytes ]]; then
+    current="$(< /sys/fs/cgroup/memory/memory.usage_in_bytes)"
+    maximum="$(< /sys/fs/cgroup/memory/memory.limit_in_bytes)"
+    printf '  current: %s\n' "$(bytes_to_mib "${current}")"
+    printf '  limit:   %s\n' "$(bytes_to_mib "${maximum}")"
+else
+    echo '  cgroup memory counters are unavailable.'
+fi
+
+if [[ -r /sys/fs/cgroup/memory.oom.group ]]; then
+    printf '  oom.group: %s (0 means process-level OOM is allowed)\n' "$(< /sys/fs/cgroup/memory.oom.group)"
+fi
+if [[ -r /sys/fs/cgroup/memory.events ]]; then
+    echo
+    echo 'Cgroup memory events:'
+    sed 's/^/  /' /sys/fs/cgroup/memory.events
+fi
+
+echo
+echo 'Core OOM protection:'
+for service in xvnc novnc memory-guardian openclaw chrome; do
+    pid="$(supervisorctl pid "${service}" 2>/dev/null || true)"
+    if [[ "${pid}" =~ ^[0-9]+$ && "${pid}" -gt 0 && -r "/proc/${pid}/oom_score_adj" ]]; then
+        printf '  %-16s pid=%-7s oom_score_adj=%s\n' "${service}" "${pid}" "$(< "/proc/${pid}/oom_score_adj")"
+    fi
+done
+
+echo
+echo 'Largest processes:'
+ps -eo pid,user,rss,comm --sort=-rss | head -n 15

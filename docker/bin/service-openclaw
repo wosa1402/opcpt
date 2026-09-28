@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+for _ in $(seq 1 600); do
+    [[ -e /run/openclaw/bootstrap.ready ]] && break
+    sleep 1
+done
+[[ -e /run/openclaw/bootstrap.ready ]] || { echo '[openclaw] bootstrap did not finish.' >&2; exit 1; }
+
+if [[ -z "${OPENCLAW_RUNTIME_ENV_FILE:-}" || ! -r "${OPENCLAW_RUNTIME_ENV_FILE}" ]]; then
+    echo '[openclaw] Runtime environment file is unavailable.' >&2
+    exit 1
+fi
+
+# Only the OpenClaw process receives the model credential environment.
+# shellcheck disable=SC1090
+source "${OPENCLAW_RUNTIME_ENV_FILE}"
+
+/usr/local/bin/set-oom-score 500 openclaw || true
+
+if [[ "${RUN_OPENCLAW_DOCTOR:-0}" == 1 ]]; then
+    openclaw doctor --fix --yes || true
+fi
+
+exec openclaw gateway run --force

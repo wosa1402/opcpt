@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score -1000 memory-guardian || true
+
+warning_percent="${MEMORY_WARNING_PERCENT:-80}"
+critical_percent="${MEMORY_CRITICAL_PERCENT:-88}"
+emergency_percent="${MEMORY_EMERGENCY_PERCENT:-94}"
+recovery_percent="${MEMORY_RECOVERY_PERCENT:-72}"
+interval="${MEMORY_GUARD_INTERVAL_SECONDS:-2}"
+min_kill_mib="${MEMORY_KILL_MIN_RSS_MIB:-256}"
+state_file=/run/openclaw/memory-guardian.status
+shed_chrome=0
+shed_openclaw=0
+recovery_ticks=0
+warned=0
+last_term_pid=0
+last_term_time=0
+
+for numeric in "${warning_percent}" "${critical_percent}" "${emergency_percent}" \
+    "${recovery_percent}" "${interval}" "${min_kill_mib}"; do
+    if [[ ! "${numeric}" =~ ^[0-9]+$ ]]; then
+        echo "[memory-guardian] invalid numeric setting: ${numeric}" >&2
+        exit 2
+    fi
+done
+if (( recovery_percent >= warning_percent \
+    || warning_percent >= critical_percent \
+    || critical_percent >= emergency_percent \
+    || emergency_percent > 99 \
+    || interval < 1 \
+    || min_kill_mib < 1 )); then
+    echo '[memory-guardian] invalid threshold ordering.' >&2
+    exit 2
+fi
+min_kill_kib="$(( min_kill_mib * 1024 ))"
+
+read_memory() {
+    if [[ -r /sys/fs/cgroup/memory.current && -r /sys/fs/cgroup/memory.max ]]; then
+        current="$(< /sys/fs/cgroup/memory.current)"
+        maximum="$(< /sys/fs/cgroup/memory.max)"
+    elif [[ -r /sys/fs/cgroup/memory/memory.usage_in_bytes && -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]]; then
+        current="$(< /sys/fs/cgroup/memory/memory.usage_in_bytes)"
+        maximum="$(< /sys/fs/cgroup/memory/memory.limit_in_bytes)"
+    else
+        return 1
+    fi
+    [[ "${current}" =~ ^[0-9]+$ && "${maximum}" =~ ^[0-9]+$ ]] || return 1
+    (( maximum > 0 && maximum < 1000000000000000 )) || return 1
+    percent=$(( current * 100 / maximum ))
+}
+
+service_running() {
+    supervisorctl status "$1" 2>/dev/null | grep -q ' RUNNING '
+}
+
+stop_service() {
+    local service="$1"
+    echo "[memory-guardian] stopping ${service} to protect noVNC/Xvnc."
+    timeout 5 supervisorctl stop "${service}" > /dev/null 2>&1 || true
+    touch /run/openclaw/backup.dirty
+}
+
+largest_killable() {
+    local best_pid=0 best_rss=0 pid rss comm adj
+    while read -r pid rss comm; do
+        [[ "${pid}" =~ ^[0-9]+$ && "${rss}" =~ ^[0-9]+$ ]] || continue
+        (( pid > 1 && pid != $$ )) || continue
+        [[ -r "/proc/${pid}/oom_score_adj" ]] || continue
+        adj="$(< "/proc/${pid}/oom_score_adj")"
+        (( adj > -900 )) || continue
+        case "${comm}" in
+            supervisord|Xtigervnc|websockify|memory-guardian|tini|dbus-daemon)
+                continue
+                ;;
+        esac
+        if (( rss > best_rss )); then
+            best_pid="${pid}"
+            best_rss="${rss}"
+        fi
+    done < <(ps -eo pid=,rss=,comm=)
+    printf '%s %s\n' "${best_pid}" "${best_rss}"
+}
+
+while ! supervisorctl status > /dev/null 2>&1; do sleep 1; done
+
+while true; do
+    if ! read_memory; then
+        printf 'disabled no-finite-cgroup-limit\n' > "${state_file}"
+        echo '[memory-guardian] 未发现有限的容器内存上限；只保留 OOM 分数保护。'
+        sleep 60
+        continue
+    fi
+
+    printf 'usage=%s%% current=%s limit=%s chrome_shed=%s openclaw_shed=%s\n' \
+        "${percent}" "${current}" "${maximum}" "${shed_chrome}" "${shed_openclaw}" > "${state_file}"
+
+    if (( percent >= warning_percent && ! warned )); then
+        echo "[memory-guardian] 内存达到 ${percent}%，进入预警。"
+        warned=1
+    fi
+
+    if (( percent >= critical_percent )); then
+        touch /run/openclaw/backup.suspended
+        recovery_ticks=0
+        if (( ! shed_chrome )) && service_running chrome; then
+            stop_service chrome
+            shed_chrome=1
+        elif (( percent >= emergency_percent && ! shed_openclaw )) && service_running openclaw; then
+            stop_service openclaw
+            shed_openclaw=1
+        elif (( percent >= emergency_percent )); then
+            read -r candidate_pid candidate_rss < <(largest_killable)
+            if (( candidate_pid > 1 && candidate_rss >= min_kill_kib )); then
+                now="$(date +%s)"
+                if (( candidate_pid == last_term_pid && now - last_term_time >= 3 )); then
+                    echo "[memory-guardian] emergency ${percent}%: KILL pid=${candidate_pid} rss_kib=${candidate_rss}."
+                    kill -KILL "${candidate_pid}" 2>/dev/null || true
+                    last_term_pid=0
+                else
+                    echo "[memory-guardian] emergency ${percent}%: TERM pid=${candidate_pid} rss_kib=${candidate_rss}."
+                    kill -TERM "${candidate_pid}" 2>/dev/null || true
+                    last_term_pid="${candidate_pid}"
+                    last_term_time="${now}"
+                fi
+            fi
+        fi
+    elif (( percent <= recovery_percent )); then
+        rm -f -- /run/openclaw/backup.suspended
+        warned=0
+        (( recovery_ticks += 1 ))
+        if (( recovery_ticks >= 5 )); then
+            if (( shed_openclaw )); then
+                echo '[memory-guardian] 内存已经恢复，重新启动 OpenClaw。'
+                timeout 15 supervisorctl start openclaw > /dev/null 2>&1 || true
+                shed_openclaw=0
+                recovery_ticks=0
+            elif (( shed_chrome )); then
+                echo '[memory-guardian] 内存已经恢复，重新启动 Chrome。'
+                timeout 15 supervisorctl start chrome > /dev/null 2>&1 || true
+                shed_chrome=0
+                recovery_ticks=0
+            fi
+        fi
+    else
+        recovery_ticks=0
+    fi
+
+    sleep "${interval}"
+done

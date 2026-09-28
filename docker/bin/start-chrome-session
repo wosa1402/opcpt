@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score 700 chrome || true
+
+cache_dir=/tmp/openclaw-chrome-cache
+mkdir -p "${cache_dir}"
+
+chrome_args=(
+    --user-data-dir="${XDG_CONFIG_HOME}/google-chrome"
+    --disk-cache-dir="${cache_dir}"
+    --disk-cache-size="${CHROME_DISK_CACHE_BYTES:-268435456}"
+    --media-cache-size="${CHROME_MEDIA_CACHE_BYTES:-67108864}"
+    --remote-debugging-address=127.0.0.1
+    --remote-debugging-port="${CHROME_CDP_PORT:-9222}"
+    --disable-dev-shm-usage
+    --disable-gpu
+    --disable-background-mode
+    --no-first-run
+    --no-default-browser-check
+    --password-store=basic
+    --renderer-process-limit="${CHROME_RENDERER_LIMIT:-3}"
+    --no-sandbox
+)
+
+echo '[chrome] 以 root 运行，Chromium sandbox 按设计关闭；请只在私有空间中使用。' >&2
+
+/usr/bin/google-chrome-stable "${chrome_args[@]}" about:blank &
+chrome_pid=$!
+
+terminate_chrome() {
+    if kill -0 "${chrome_pid}" 2>/dev/null; then
+        kill -TERM "${chrome_pid}" 2>/dev/null || true
+    fi
+}
+trap terminate_chrome TERM INT HUP
+
+for _ in $(seq 1 120); do
+    if ! kill -0 "${chrome_pid}" 2>/dev/null; then
+        break
+    fi
+    if nc -z 127.0.0.1 "${OPENCLAW_GATEWAY_PORT:-18789}" \
+        && curl -fsS --max-time 2 \
+            "http://127.0.0.1:${CHROME_CDP_PORT:-9222}/json/version" > /dev/null; then
+        if node --input-type=module -e '
+          import { readFile } from "node:fs/promises";
+          const token = (await readFile(process.env.OPENCLAW_GATEWAY_TOKEN_FILE, "utf8")).trim();
+          const port = process.env.OPENCLAW_GATEWAY_PORT || "18789";
+          const cdpPort = process.env.CHROME_CDP_PORT || "9222";
+          const target = `http://127.0.0.1:${port}/#token=${encodeURIComponent(token)}`;
+          const response = await fetch(`http://127.0.0.1:${cdpPort}/json/new?${encodeURIComponent(target)}`, { method: "PUT" });
+          if (!response.ok) throw new Error(`CDP navigation failed: ${response.status}`);
+        '; then
+            echo '[chrome] Opened the local OpenClaw Control UI.'
+        else
+            echo '[chrome] Could not open the Control UI automatically; Chrome remains available.' >&2
+        fi
+        break
+    fi
+    sleep 1
+done
+
+if wait "${chrome_pid}"; then
+    exit 0
+else
+    exit $?
+fi
