@@ -85,6 +85,7 @@ jobs:
           image="local/openclaw-smoke:${GITHUB_SHA}"
           docker run -d --name "${container}" --shm-size=1g \
             -e VNC_PASSWD=smoke123 \
+            -e BACKUP_START_DELAY_SECONDS=600 \
             "${image}"
 
           health=''
@@ -108,6 +109,17 @@ jobs:
           done
           [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
           docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
+
+          docker exec "${container}" /usr/local/bin/openclaw-backup-now
+          docker exec "${container}" grep -Eq '^ok snapshot-' /run/openclaw/backup.status
+          docker exec "${container}" bash -Eeuo pipefail -c '
+            snapshot_dir=/data/openclaw-data/snapshots
+            latest="$(tr -d "\r\n" < "${snapshot_dir}/LATEST")"
+            [[ "${latest}" == snapshot-*.tar.zst ]]
+            expected="$(tr -d "\r\n" < "${snapshot_dir}/${latest}.sha256")"
+            actual="$(sha256sum "${snapshot_dir}/${latest}" | awk "{print \$1}")"
+            [[ "${actual}" == "${expected}" ]]
+          '
 
           docker exec -i "${container}" node --input-type=module <<'NODE'
           const deadline = Date.now() + 120_000;

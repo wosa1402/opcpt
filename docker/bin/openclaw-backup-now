@@ -76,7 +76,7 @@ backup_sqlite_tree() {
     [[ -d "${tree}" ]] || return 0
     while IFS= read -r -d '' database; do
         [[ -r "${database}" ]] || continue
-        if [[ "$(head -c 15 -- "${database}" 2>/dev/null || true)" != 'SQLite format 3' ]]; then
+        if ! head -c 15 -- "${database}" 2>/dev/null | grep -aqF 'SQLite format 3'; then
             continue
         fi
         relative="${database#/root/}"
@@ -112,7 +112,7 @@ fi
 
 log "正在创建一致性快照（暂存数据 ${stage_mib} MiB）。"
 tar --numeric-owner --owner=0 --group=0 -C "${stage}" -cf - . \
-    | zstd -q -1 -T1 -o "${archive}"
+    | zstd -q -f -1 -T1 -o "${archive}"
 
 name="snapshot-$(date -u +%Y%m%dT%H%M%SZ)-$$.tar.zst"
 partial="${snapshot_dir}/${name}.partial"

@@ -104,6 +104,7 @@ check(chromeProgram.includes("exitcodes=0"), "a normal Chrome close must be clas
 check(!chromeProgram.includes("autorestart=true"), "Chrome must not be forced back open after a normal close");
 
 check(xvnc.includes("set-oom-score -1000"), "Xvnc must request OOM immunity");
+check(!/(^|\s)-fg(\s|$)/m.test(xvnc), "Xtigervnc must not use the removed Debian 13 -fg option");
 check(novnc.includes("set-oom-score -1000"), "noVNC must request OOM immunity");
 check(xvnc.includes("-localhost yes"), "VNC must listen on loopback only");
 check(!xvnc.includes("-localhost no"), "VNC must never listen publicly");
@@ -131,6 +132,8 @@ check(!healthcheck.includes("OPENCLAW_GATEWAY_PORT"), "healthcheck must not depe
 check(backup.includes("sha256sum"), "snapshots must be checksummed");
 check(backup.includes("snapshot-"), "snapshots must be versioned");
 check(backup.includes(".backup"), "SQLite online backup must be used");
+check(backup.includes("grep -aqF 'SQLite format 3'"), "SQLite detection must not inject binary headers into a shell variable");
+check(backup.includes("zstd -q -f"), "snapshot compression must overwrite its securely pre-created temporary file");
 check(backup.includes("BACKUP_KEEP"), "snapshot retention must be bounded");
 check(backup.includes("BACKUP_MAX_MIB"), "snapshot staging size must be bounded");
 check(backup.includes("/root/.openclaw/npm/projects"), "user-installed OpenClaw plugin payloads must survive an offline restore");
@@ -174,6 +177,8 @@ check(!publishWorkflow.includes("secrets.DEEPSEEK_API_KEY"), "runtime provider c
 check(!publishWorkflow.includes("secrets.VNC_PASSWD"), "the user's VNC password must not be exposed to image builds");
 check(publishWorkflow.includes("Smoke-test KDE, noVNC, and managed Chrome"), "the published image must pass a real runtime smoke test");
 check(publishWorkflow.includes("pgrep -x plasmashell"), "the runtime smoke test must verify KDE Plasma");
+check(publishWorkflow.includes("openclaw-backup-now"), "the runtime smoke test must create a real persistence snapshot");
+check(publishWorkflow.includes("actual=\"$(sha256sum"), "the runtime smoke test must verify the snapshot checksum");
 check(publishWorkflow.includes('method: "Browser.close"'), "the runtime smoke test must exercise a normal Chrome close");
 check(publishWorkflow.includes("start-managed-chrome"), "the runtime smoke test must verify manual Chrome reopening");
 check(publishWorkflow.indexOf("Smoke-test KDE, noVNC, and managed Chrome") < publishWorkflow.indexOf("Build and publish image"), "runtime validation must finish before the image is published");
