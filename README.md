@@ -105,7 +105,11 @@ supervisorctl restart openclaw
 
 ## ModelScope
 
-完整步骤见 [docs/modelscope.md](docs/modelscope.md)。入口脚本检测到可写的 `/mnt/workspace` 后，自动把快照目录设为 `/mnt/workspace/openclaw-data`。运行目录始终是本地 `/root`。
+推荐将 [deploy/modelscope](deploy/modelscope) 文件夹作为项目文件夹上传到 ModelScope“编程式创空间”。其中的轻量 Dockerfile 固定拉取一份已验证的 GHCR 镜像，不会在 ModelScope 重新安装整套桌面依赖。根目录也提供了 [ms_deploy.json](ms_deploy.json)，需要从源码重新构建时可上传整个仓库。
+
+创建私有 Docker 创空间，资源选择 `platform/2v-cpu-16g-mem`，服务端口保持 `7860`。在平台 Secret 中设置 `VNC_PASSWD` 和 `DEEPSEEK_API_KEY`，再把完整的中转地址配置为普通变量 `DEEPSEEK_BASE_URL`。不要配置 `OPENCLAW_PERSIST_DIR`。
+
+完整步骤、旧数据迁移和首次验收见 [docs/modelscope.md](docs/modelscope.md)。入口脚本检测到可写的 `/mnt/workspace` 后，自动把快照目录设为 `/mnt/workspace/openclaw-data`；运行目录始终是本地 `/root`。
 
 ## GitHub 自动构建镜像
 

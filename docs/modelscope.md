@@ -1,8 +1,30 @@
 # ModelScope 部署说明
 
-## 创建与配置
+## 推荐方式：拉取已构建的 GHCR 镜像
 
-创建支持 Dockerfile 的私有创空间，公开服务端口保持 `7860`。建议先使用 `platform/2v-cpu-16g-mem` 规格验证。
+GitHub Actions 已经完成整套桌面镜像的构建。ModelScope 只需要使用仓库中的轻量部署目录：
+
+```text
+deploy/modelscope/
+├── Dockerfile
+└── ms_deploy.json
+```
+
+该 Dockerfile 使用经过验证的 OCI 摘要固定镜像版本，不使用可能随时变化的 `latest`。将来确认新版镜像正常后，再更新这里的摘要即可完成受控升级。
+
+部署步骤：
+
+1. 打开 ModelScope“创空间”，选择“创建创空间”。
+2. 选择“编程式创空间”，切换到“快速部署并创建”。
+3. 选择私有空间，将 `deploy/modelscope` 作为项目文件夹上传。
+4. 使用 `platform/2v-cpu-16g-mem`，服务端口保持 `7860`。
+5. 配置下面列出的 Secrets 和 Variables，然后启动构建。
+
+这个方式只拉取 GHCR 成品镜像，通常比在 ModelScope 重新执行 Debian、XFCE、Chrome 和 OpenClaw 的完整安装更快、更稳定。如果平台无法访问 GHCR，可改为上传整个仓库；根目录的 `Dockerfile` 和 `ms_deploy.json` 会执行完整源码构建。
+
+## 环境配置
+
+无论使用成品镜像还是源码构建，都创建私有创空间。不要把带 root 桌面、浏览器资料和 OpenClaw 的实例作为公开应用运行。
 
 设置以下变量：
 
@@ -14,6 +36,8 @@
 | `DEEPSEEK_MODEL_ID` | Variable | `deepseek-chat` 或 `deepseek-reasoner` |
 | `DEEPSEEK_MODEL_NAME` | Variable | 界面显示名 |
 | `DEEPSEEK_API` | Variable | `openai-completions` |
+
+`VNC_PASSWD` 建议直接使用随机的 8 位密码，避免传统 VNC 只读取前 8 个字符造成输入混淆。`DEEPSEEK_BASE_URL` 必须是中转站要求的完整地址；镜像不会自动追加 `/v1`。
 
 不要在 ModelScope 页面配置 `OPENCLAW_PERSIST_DIR`，入口脚本会检测 `/mnt/workspace` 并选择：
 
@@ -55,6 +79,8 @@ IMPORT_LEGACY_BACKUP=1
 ```
 
 新镜像会按自己的白名单导入旧数据。确认运行正常并成功生成新快照后，立即改回 `0`，避免以后重复导入旧状态。
+
+新建创空间通常不会自动共享原创空间的 `/mnt/workspace`。若需要迁移旧数据，先在新的私有空间完成空白环境测试，再在原创空间替换 Dockerfile，或先把旧备份复制到新空间。不要在确认新快照和重启恢复均正常前删除旧空间。
 
 ## 首次验收
 

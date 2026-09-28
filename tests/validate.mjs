@@ -32,6 +32,9 @@ const readme = await read("README.md");
 const backupPaths = await read("docker/backup-paths.txt");
 const backupExcludes = await read("docker/backup-excludes.txt");
 const publishWorkflow = await read(".github/workflows/publish-image.yml");
+const modelScopeDockerfile = await read("deploy/modelscope/Dockerfile");
+const modelScopeDeploy = JSON.parse(await read("deploy/modelscope/ms_deploy.json"));
+const modelScopeSourceDeploy = JSON.parse(await read("ms_deploy.json"));
 
 check(/^FROM node:\$\{NODE_VERSION\}-bookworm-slim$/m.test(dockerfile), "Dockerfile must use the clean Node/Debian base");
 check(!dockerfile.includes("ghcr.io/tunmax"), "Dockerfile must not inherit the shared image");
@@ -131,6 +134,13 @@ check(publishWorkflow.includes("platforms: linux/amd64"), "cloud image builds mu
 check(publishWorkflow.includes("password: ${{ secrets.GITHUB_TOKEN }}"), "GHCR publishing must use GitHub's ephemeral workflow token");
 check(!publishWorkflow.includes("DEEPSEEK_API_KEY"), "runtime provider credentials must not be exposed to image builds");
 check(!publishWorkflow.includes("VNC_PASSWD"), "the VNC password must not be exposed to image builds");
+check(/^FROM ghcr\.io\/wosa1402\/opcpt@sha256:[0-9a-f]{64}$/m.test(modelScopeDockerfile), "ModelScope must pin the prebuilt image by OCI digest");
+check(!modelScopeDockerfile.includes(":latest"), "ModelScope deployment must not float on the latest tag");
+check(modelScopeDockerfile.includes("EXPOSE 7860"), "ModelScope deployment must expose port 7860");
+check(modelScopeDeploy.sdk_type === "docker", "ModelScope prebuilt deployment must use the Docker SDK");
+check(modelScopeDeploy.resource_configuration === "platform/2v-cpu-16g-mem", "ModelScope prebuilt deployment must target 2 CPU and 16 GB RAM");
+check(modelScopeDeploy.port === 7860, "ModelScope prebuilt deployment must publish port 7860");
+check(JSON.stringify(modelScopeSourceDeploy) === JSON.stringify(modelScopeDeploy), "source and prebuilt ModelScope deployment settings must stay aligned");
 
 const binNames = (await readdir(path.join(root, "docker/bin"))).sort();
 const runtimeTexts = [dockerfile, templateText, supervisor];

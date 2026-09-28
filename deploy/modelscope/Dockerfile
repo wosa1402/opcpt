@@ -1,0 +1,3 @@
+FROM ghcr.io/wosa1402/opcpt@sha256:ef0fcf412ad29d3b130ee86101927a0a8e1c3e8d065f59875c5c8eaffaae0c1f
+
+EXPOSE 7860
