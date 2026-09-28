@@ -110,18 +110,6 @@ jobs:
           [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
           docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
 
-          docker exec -e OPENCLAW_PERSIST_DIR=/data/openclaw-data \
-            "${container}" /usr/local/bin/openclaw-backup-now
-          docker exec "${container}" grep -Eq '^ok snapshot-' /run/openclaw/backup.status
-          docker exec "${container}" bash -Eeuo pipefail -c '
-            snapshot_dir=/data/openclaw-data/snapshots
-            latest="$(tr -d "\r\n" < "${snapshot_dir}/LATEST")"
-            [[ "${latest}" == snapshot-*.tar.zst ]]
-            expected="$(tr -d "\r\n" < "${snapshot_dir}/${latest}.sha256")"
-            actual="$(sha256sum "${snapshot_dir}/${latest}" | awk "{print \$1}")"
-            [[ "${actual}" == "${expected}" ]]
-          '
-
           docker exec -i "${container}" node --input-type=module <<'NODE'
           const deadline = Date.now() + 120_000;
           let endpoint;
@@ -139,9 +127,15 @@ jobs:
           const socket = new WebSocket(endpoint);
           await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error("Chrome did not close cleanly")), 15_000);
-            socket.addEventListener("open", () => socket.send(JSON.stringify({ id: 1, method: "Browser.close" })));
-            socket.addEventListener("close", () => { clearTimeout(timer); resolve(); });
-            socket.addEventListener("error", reject);
+            let closeRequested = false;
+            const finish = () => { clearTimeout(timer); resolve(); };
+            const fail = (event) => { clearTimeout(timer); reject(event); };
+            socket.addEventListener("open", () => {
+              closeRequested = true;
+              socket.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+            });
+            socket.addEventListener("close", finish);
+            socket.addEventListener("error", (event) => closeRequested ? finish() : fail(event));
           });
           NODE
 
@@ -156,6 +150,18 @@ jobs:
           chrome_status="$(docker exec "${container}" supervisorctl status chrome 2>&1 || true)"
           [[ "${chrome_status}" == *' EXITED '* ]] || { echo "Chrome was reopened unexpectedly: ${chrome_status}" >&2; exit 1; }
           docker exec "${container}" /usr/local/bin/healthcheck
+
+          docker exec -e OPENCLAW_PERSIST_DIR=/data/openclaw-data \
+            "${container}" /usr/local/bin/openclaw-backup-now
+          docker exec "${container}" grep -Eq '^ok snapshot-' /run/openclaw/backup.status
+          docker exec "${container}" bash -Eeuo pipefail -c '
+            snapshot_dir=/data/openclaw-data/snapshots
+            latest="$(tr -d "\r\n" < "${snapshot_dir}/LATEST")"
+            [[ "${latest}" == snapshot-*.tar.zst ]]
+            expected="$(tr -d "\r\n" < "${snapshot_dir}/${latest}.sha256")"
+            actual="$(sha256sum "${snapshot_dir}/${latest}" | awk "{print \$1}")"
+            [[ "${actual}" == "${expected}" ]]
+          '
 
           docker exec "${container}" /usr/local/bin/start-managed-chrome
           chrome_status="$(docker exec "${container}" supervisorctl status chrome 2>&1 || true)"

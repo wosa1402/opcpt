@@ -136,6 +136,8 @@ check(backup.includes("sha256sum"), "snapshots must be checksummed");
 check(backup.includes("snapshot-"), "snapshots must be versioned");
 check(backup.includes(".backup"), "SQLite online backup must be used");
 check(backup.includes("grep -aqF 'SQLite format 3'"), "SQLite detection must not inject binary headers into a shell variable");
+check(backup.includes('[[ -e "${destination}" ]] || continue'), "excluded cache databases must not be reintroduced during online backup");
+check(backup.includes("backup_sqlite_tree /root/.config/openclaw-chrome 250"), "Chrome database lock waits must stay bounded");
 check(backup.includes("zstd -q -f"), "snapshot compression must overwrite its securely pre-created temporary file");
 check(backup.includes("BACKUP_KEEP"), "snapshot retention must be bounded");
 check(backup.includes("BACKUP_MAX_MIB"), "snapshot staging size must be bounded");
@@ -185,6 +187,7 @@ check(publishWorkflow.includes("pgrep -x plasmashell"), "the runtime smoke test 
 check(publishWorkflow.includes("openclaw-backup-now"), "the runtime smoke test must create a real persistence snapshot");
 check(publishWorkflow.includes("actual=\"$(sha256sum"), "the runtime smoke test must verify the snapshot checksum");
 check(publishWorkflow.includes('method: "Browser.close"'), "the runtime smoke test must exercise a normal Chrome close");
+check(publishWorkflow.includes("closeRequested ? finish() : fail(event)"), "the Chrome close test must accept the expected CDP socket teardown");
 check(publishWorkflow.includes("start-managed-chrome"), "the runtime smoke test must verify manual Chrome reopening");
 check(publishWorkflow.indexOf("Smoke-test KDE, noVNC, and managed Chrome") < publishWorkflow.indexOf("Build and publish image"), "runtime validation must finish before the image is published");
 check(/^FROM ghcr\.io\/wosa1402\/opcpt@sha256:[0-9a-f]{64}$/m.test(modelScopeDockerfile), "ModelScope must pin the prebuilt image by OCI digest");

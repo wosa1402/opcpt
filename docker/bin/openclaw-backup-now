@@ -73,6 +73,7 @@ done < "${paths_file}"
 
 backup_sqlite_tree() {
     local tree="$1"
+    local busy_timeout_ms="${2:-5000}"
     [[ -d "${tree}" ]] || return 0
     while IFS= read -r -d '' database; do
         [[ -r "${database}" ]] || continue
@@ -81,10 +82,13 @@ backup_sqlite_tree() {
         fi
         relative="${database#/root/}"
         destination="${stage}/root/${relative}"
+        # Respect the rsync exclusions: cache databases that were deliberately
+        # omitted from the snapshot must not be added back by the SQLite pass.
+        [[ -e "${destination}" ]] || continue
         temporary="${destination}.online-backup"
         mkdir -p -- "$(dirname -- "${destination}")"
         escaped_temporary="${temporary//\'/\'\'}"
-        if sqlite3 "${database}" ".timeout 5000" ".backup '${escaped_temporary}'" > /dev/null 2>&1; then
+        if sqlite3 "${database}" ".timeout ${busy_timeout_ms}" ".backup '${escaped_temporary}'" > /dev/null 2>&1; then
             mv -f -- "${temporary}" "${destination}"
             rm -f -- "${destination}-wal" "${destination}-shm" "${destination}-journal"
         else
@@ -94,8 +98,10 @@ backup_sqlite_tree() {
     done < <(find "${tree}" -type f -size +15c -print0 2>/dev/null)
 }
 
-backup_sqlite_tree /root/.openclaw
-backup_sqlite_tree /root/.config/openclaw-chrome
+backup_sqlite_tree /root/.openclaw 5000
+# Chrome can hold many short-lived database locks. Bound each retry so an
+# automatic or shutdown snapshot cannot stall for several minutes.
+backup_sqlite_tree /root/.config/openclaw-chrome 250
 
 apt-mark showmanual 2>/dev/null | sort > "${stage}/metadata/apt-manual.txt" || true
 snapshot_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
