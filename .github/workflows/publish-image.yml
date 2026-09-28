@@ -110,8 +110,39 @@ jobs:
           [[ "${desktop_ready}" == 1 ]] || { echo 'KDE Plasma X11 did not become ready.' >&2; exit 1; }
           docker exec "${container}" pgrep -x fcitx5 > /dev/null
           docker exec "${container}" test -x /usr/bin/fcitx5-config-qt
+          docker exec "${container}" supervisorctl status dbus-session | grep -Fq 'RUNNING'
           docker exec "${container}" grep -Fq 'Name=pinyin' /root/.config/fcitx5/profile
-          docker exec "${container}" grep -Fq 'TriggerKeys=Control+space' /root/.config/fcitx5/config
+          docker exec "${container}" grep -Fq '[Hotkey/TriggerKeys]' /root/.config/fcitx5/config
+          docker exec "${container}" grep -Fq '0=Control+Shift_L' /root/.config/fcitx5/config
+          docker exec "${container}" grep -Fq '1=Control+Shift_R' /root/.config/fcitx5/config
+          docker exec "${container}" grep -Fq 'ModifierOnlyKeyTimeout=1000' /root/.config/fcitx5/config
+          docker exec -i "${container}" bash -Eeuo pipefail <<'BASH'
+          test_dir=/tmp/fcitx-migration-test
+          rm -rf -- "${test_dir}"
+          install -d -m 0700 "${test_dir}"
+          trap 'rm -rf -- "${test_dir}"' EXIT
+          printf '[Hotkey]\nTriggerKeys=Control+space\n\n[Behavior]\nActiveByDefault=False\n' \
+            > "${test_dir}/config"
+          /usr/local/bin/migrate-fcitx5-ctrl-shift \
+            "${test_dir}/config" "${test_dir}/marker"
+          test -f "${test_dir}/marker"
+          test -f "${test_dir}/config.before-openclaw-ctrl-shift-v1"
+          ! grep -Eq '^TriggerKeys=' "${test_dir}/config"
+          grep -Fq '[Hotkey/TriggerKeys]' "${test_dir}/config"
+          grep -Fq '0=Control+Shift_L' "${test_dir}/config"
+          grep -Fq '1=Control+Shift_R' "${test_dir}/config"
+          BASH
+          docker exec "${container}" fcitx5-remote --check
+          docker exec "${container}" bash -Eeuo pipefail -c '
+            initial="$(fcitx5-remote)"
+            [[ "${initial}" == 1 || "${initial}" == 2 ]]
+            fcitx5-remote -t
+            toggled="$(fcitx5-remote)"
+            [[ "${toggled}" == 1 || "${toggled}" == 2 ]]
+            [[ "${toggled}" != "${initial}" ]]
+            fcitx5-remote -t
+            [[ "$(fcitx5-remote)" == "${initial}" ]]
+          '
           docker exec "${container}" grep -Fq 'floating=0' /root/.config/plasmashellrc
           docker exec "${container}" grep -Fq 'set("resize", "remote")' /usr/share/novnc/index.html
 

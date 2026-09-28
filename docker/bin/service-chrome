@@ -2,13 +2,17 @@
 set -Eeuo pipefail
 
 for _ in $(seq 1 600); do
-    if [[ -S /tmp/.X11-unix/X1 && -e /run/openclaw/bootstrap.ready ]]; then
+    if [[ -S /tmp/.X11-unix/X1 \
+        && -S /run/user/0/bus \
+        && -e /run/openclaw/bootstrap.ready ]]; then
         break
     fi
     sleep 1
 done
 
-[[ -S /tmp/.X11-unix/X1 && -e /run/openclaw/bootstrap.ready ]] \
-    || { echo '[chrome] X server or bootstrap did not become ready.' >&2; exit 1; }
+[[ -S /tmp/.X11-unix/X1 \
+    && -S /run/user/0/bus \
+    && -e /run/openclaw/bootstrap.ready ]] \
+    || { echo '[chrome] X server, session bus, or bootstrap did not become ready.' >&2; exit 1; }
 
-exec /usr/bin/dbus-run-session -- /usr/local/bin/start-chrome-session
+exec /usr/local/bin/start-chrome-session

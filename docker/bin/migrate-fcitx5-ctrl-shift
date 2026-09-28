@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+config_path="${1:-/root/.config/fcitx5/config}"
+marker_path="${2:-/root/.config/fcitx5/.openclaw-ctrl-shift-v1}"
+backup_path="${config_path}.before-openclaw-ctrl-shift-v1"
+
+[[ -f "${config_path}" ]] \
+    || { echo "[fcitx] 找不到配置文件：${config_path}" >&2; exit 1; }
+
+if [[ -e "${marker_path}" ]]; then
+    exit 0
+fi
+
+if grep -Fxq '[Hotkey/TriggerKeys]' "${config_path}" \
+    && grep -Fxq '0=Control+Shift_L' "${config_path}" \
+    && grep -Fxq '1=Control+Shift_R' "${config_path}" \
+    && grep -Fxq 'ModifierOnlyKeyTimeout=1000' "${config_path}" \
+    && ! grep -Eq '^TriggerKeys=' "${config_path}"; then
+    touch "${marker_path}"
+    exit 0
+fi
+
+# Version 1 of this image wrote TriggerKeys as a scalar value, but Fcitx 5
+# stores key lists in their own INI subsection. Preserve the restored file,
+# then replace only the toggle-key section and modifier timeout. The marker is
+# itself persisted, so later user customizations are not overwritten.
+if [[ ! -e "${backup_path}" ]]; then
+    cp -p -- "${config_path}" "${backup_path}"
+fi
+
+config_tmp="$(mktemp "${config_path}.ctrl-shift.XXXXXX")"
+cleanup() {
+    rm -f -- "${config_tmp}"
+}
+trap cleanup EXIT
+
+awk '
+    function write_timeout() {
+        if (!timeout_written) {
+            print "ModifierOnlyKeyTimeout=1000"
+            timeout_written=1
+        }
+    }
+
+    /^\[/ {
+        if (skip_trigger_section) {
+            skip_trigger_section=0
+        }
+        if ($0 == "[Hotkey/TriggerKeys]") {
+            if (in_hotkey) {
+                write_timeout()
+            }
+            in_hotkey=0
+            skip_trigger_section=1
+            next
+        }
+        if (in_hotkey) {
+            write_timeout()
+        }
+        in_hotkey=($0 == "[Hotkey]")
+        if (in_hotkey) {
+            saw_hotkey=1
+        }
+    }
+
+    skip_trigger_section { next }
+    in_hotkey && /^TriggerKeys=/ { next }
+    in_hotkey && /^ModifierOnlyKeyTimeout=/ {
+        write_timeout()
+        next
+    }
+    { print }
+
+    END {
+        if (in_hotkey) {
+            write_timeout()
+        }
+        if (!saw_hotkey) {
+            print ""
+            print "[Hotkey]"
+            print "ModifierOnlyKeyTimeout=1000"
+        }
+        print ""
+        print "[Hotkey/TriggerKeys]"
+        print "0=Control+Shift_L"
+        print "1=Control+Shift_R"
+    }
+' "${config_path}" > "${config_tmp}"
+
+chmod --reference="${config_path}" "${config_tmp}"
+mv -f -- "${config_tmp}" "${config_path}"
+trap - EXIT
+touch "${marker_path}"
+
+echo "[bootstrap] 已将旧输入法快捷键迁移为 Ctrl+Shift；原配置保存在 ${backup_path}。"

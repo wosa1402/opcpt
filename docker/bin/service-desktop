@@ -4,11 +4,13 @@ set -Eeuo pipefail
 /usr/local/bin/set-oom-score 300 desktop || true
 
 for _ in $(seq 1 120); do
-    if [[ -S /tmp/.X11-unix/X1 && -e /run/openclaw/bootstrap.ready ]]; then
-        exec /usr/bin/dbus-run-session -- /usr/local/bin/start-kde-session
+    if [[ -S /tmp/.X11-unix/X1 \
+        && -S /run/user/0/bus \
+        && -e /run/openclaw/bootstrap.ready ]]; then
+        exec /usr/local/bin/start-kde-session
     fi
     sleep 1
 done
 
-echo '[desktop] X server or bootstrap did not become ready.' >&2
+echo '[desktop] X server, session bus, or bootstrap did not become ready.' >&2
 exit 1

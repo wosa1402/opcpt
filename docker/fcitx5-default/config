@@ -1,6 +1,9 @@
 [Hotkey]
-TriggerKeys=Control+space
-EnumerateGroupForwardKeys=Super+space
+ModifierOnlyKeyTimeout=1000
+
+[Hotkey/TriggerKeys]
+0=Control+Shift_L
+1=Control+Shift_R
 
 [Behavior]
 ActiveByDefault=False

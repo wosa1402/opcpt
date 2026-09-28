@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+/usr/local/bin/set-oom-score -1000 dbus-session || true
+
+bus_socket=/run/user/0/bus
+install -d -m 0700 "$(dirname "${bus_socket}")"
+rm -f -- "${bus_socket}"
+
+exec /usr/bin/dbus-daemon --session --nofork --nopidfile \
+    --address="unix:path=${bus_socket}"

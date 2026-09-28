@@ -43,6 +43,7 @@ install -d -m 0700 \
 cp -an /usr/local/share/openclaw/plasma-default/. /root/.config/
 install -d -m 0700 /root/.config/fcitx5
 cp -an /usr/local/share/openclaw/fcitx5-default/. /root/.config/fcitx5/
+/usr/local/bin/migrate-fcitx5-ctrl-shift
 
 # Plasma 6 defaults to an adaptive floating panel. Keep the Windows-like
 # attached taskbar unless the user has explicitly chosen another value.

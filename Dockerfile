@@ -21,6 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NOVNC_PORT=7860 \
     CHROME_CDP_PORT=9222 \
     OPENCLAW_GATEWAY_PORT=18789 \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus \
     OPENCLAW_DISABLE_BONJOUR=1 \
     OPENCLAW_NO_AUTO_UPDATE=1 \
     MALLOC_ARENA_MAX=2 \
@@ -131,6 +132,7 @@ RUN HOME=/root \
     && command -v startplasma-x11 > /dev/null \
     && command -v kwin_x11 > /dev/null \
     && command -v plasmashell > /dev/null \
+    && command -v fcitx5-remote > /dev/null \
     && command -v fcitx5-config-qt > /dev/null \
     && command -v kreadconfig6 > /dev/null \
     && command -v kwriteconfig6 > /dev/null \

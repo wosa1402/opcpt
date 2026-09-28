@@ -24,6 +24,7 @@ install -d -m 0700 /root /root/.config /root/.local /root/.local/share /root/.ca
 install -d -m 0700 /root/.vnc "${XDG_RUNTIME_DIR}" /run/openclaw /run/openclaw-secrets
 install -d -m 0750 /var/log/openclaw /data
 rm -f -- /run/openclaw/bootstrap.ready /run/openclaw/bootstrap.status
+rm -f -- /run/user/0/bus
 
 if [[ -n "${OPENCLAW_PERSIST_DIR:-}" ]]; then
     persist_root="${OPENCLAW_PERSIST_DIR}"
